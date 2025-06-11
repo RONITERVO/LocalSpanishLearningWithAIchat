@@ -1,4 +1,4 @@
-#SpanishTutorApp.py
+# SpanishTutorApp.py
 import ollama
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, ttk
@@ -59,29 +59,27 @@ SYSTEM_PROMPTS_FILE = "system_prompts.json"
 DEFAULT_SYSTEM_PROMPT = """You are a friendly and patient Spanish language tutor AI. Your name is 'Maestro'.
 Your goal is to have a natural, encouraging conversation with the user to help them practice Spanish. The user may speak in English, Spanish, or a mix of both.
 
-Your rules are:
-1.  Always reply in Spanish.
-2.  Keep your responses concise and suitable for a beginner to intermediate learner. Use 1-3 sentences per turn.
-3.  For **every single Spanish sentence** you write, you MUST provide an English translation on the very next line, prefixed with `[EN]`.
-4.  Do not add any extra explanations, formatting, or text around the `[EN]` tag. The format must be exact.
+**Your rules are:**
+1.  **Always Reply in Spanish:** Your final output to the user must be in Spanish.
+2.  **Keep it Concise:** Keep your responses concise and suitable for a beginner to intermediate learner.
+3.  **Provide Translations:** For **every single Spanish sentence** you write, you MUST provide an English translation on the very next line, prefixed with `[EN]`.
+4.  **Use Newlines:** Each Spanish sentence and each English translation must be on its own line. This is very important for the application to work correctly.
 
-Example of a user asking a question in English:
+**Example 1: User asks for a translation.**
 User: "How do I say 'I want to learn'?"
 Your Response:
 Se dice "Quiero aprender".
-[EN]You say "I want to learn".
+[EN] You say "I want to learn".
 ¿Qué más te gustaría saber?
-[EN]What else would you like to know?
+[EN] What else would you like to know?
 
-Example of a conversational turn:
+**Example 2: Conversational turn.**
 User: "Hola, ¿cómo estás?"
 Your Response:
 ¡Hola! Estoy muy bien, gracias.
-[EN]Hello! I'm very well, thank you.
+[EN] Hello! I'm very well, thank you.
 ¿Y tú? ¿Qué tal tu día?
-[EN]And you? How is your day?
-
-Start the conversation now by greeting the user.
+[EN] And you? How is your day?
 """
 
 # ===================
@@ -92,14 +90,16 @@ messages = []
 selected_image_path = ""
 image_sent_in_history = False
 current_model = DEFAULT_OLLAMA_MODEL
-response_queue = queue.Queue() # Renamed from stream_queue for clarity
-response_done_event = threading.Event()
-response_in_progress = False
+stream_queue = queue.Queue()
+stream_done_event = threading.Event()
+stream_in_progress = False
 chat_history_widget = None
 system_prompt_input_widget = None
 system_prompt_selector = None
 saved_system_prompts = {}
-thinking_start_index = None # To track the "Thinking..." message position
+thinking_start_index = None
+stream_buffer = ""
+is_in_think_block = False
 
 # --- TTS ---
 tts_engine = None
@@ -422,19 +422,6 @@ def toggle_tts():
         while not tts_queue.empty():
             try: tts_queue.get_nowait()
             except queue.Empty: break
-
-# The following functions related to stream-based TTS are no longer used for AI responses but are kept for potential other uses.
-def queue_tts_text(new_text):
-    pass # No longer used for AI responses
-
-def clean_text_for_tts(text):
-    return text # No longer needed as we pass clean text
-
-def try_flush_tts_buffer():
-    pass # No longer needed
-
-def periodic_tts_check():
-    pass # No longer needed
 
 
 # ========================
@@ -855,8 +842,8 @@ def fetch_available_models():
         return [DEFAULT_OLLAMA_MODEL, "llama3:8b"]
 
 def chat_worker(user_message_content, system_prompt_content, image_path=None):
-    """Background worker for Ollama non-streaming chat."""
-    global messages, current_model, response_queue, response_done_event, response_in_progress
+    """Background worker for Ollama streaming chat."""
+    global messages, current_model, stream_queue, stream_done_event, stream_in_progress
 
     current_message = {"role": "user", "content": user_message_content}
     if image_path:
@@ -864,9 +851,9 @@ def chat_worker(user_message_content, system_prompt_content, image_path=None):
             with open(image_path, 'rb') as f:
                 current_message["images"] = [f.read()]
         except Exception as e:
-            response_queue.put(("ERROR", f"Error reading image file: {e}"))
-            response_in_progress = False
-            response_done_event.set()
+            stream_queue.put(("ERROR", f"Error reading image file: {e}"))
+            stream_in_progress = False
+            stream_done_event.set()
             return
 
     messages.append(current_message)
@@ -875,83 +862,104 @@ def chat_worker(user_message_content, system_prompt_content, image_path=None):
         history_for_ollama.append({"role": "system", "content": system_prompt_content})
     history_for_ollama.extend(messages)
 
+    assistant_response = ""
     try:
         print(f"[Ollama] Sending request to model {current_model}...")
-        # NON-STREAMING call
-        response = ollama.chat(model=current_model, messages=history_for_ollama, stream=False)
+        stream = ollama.chat(model=current_model, messages=history_for_ollama, stream=True)
         
-        if response and 'message' in response and 'content' in response['message']:
-            assistant_response = response['message']['content']
-            response_queue.put(("FULL_RESPONSE", assistant_response))
-            messages.append({"role": "assistant", "content": assistant_response})
-        else:
-            response_queue.put(("ERROR", "Received an empty or invalid response from Ollama."))
+        stream_queue.put(("START", None))
+        for chunk in stream:
+            if 'message' in chunk and 'content' in chunk['message']:
+                content_piece = chunk['message']['content']
+                stream_queue.put(("CHUNK", content_piece))
+                assistant_response += content_piece
+            if 'error' in chunk:
+                stream_queue.put(("ERROR", f"Ollama error: {chunk['error']}"))
+                break
+        
+        if assistant_response:
+             messages.append({"role": "assistant", "content": assistant_response})
+        
+        stream_queue.put(("END", None))
 
     except Exception as e:
-        response_queue.put(("ERROR", f"Ollama communication error: {e}"))
+        stream_queue.put(("ERROR", f"Ollama communication error: {e}"))
     finally:
-        response_in_progress = False
-        response_done_event.set()
+        stream_in_progress = False
+        stream_done_event.set()
 
-def process_response_queue():
-    """Processes full responses from Ollama queue for UI and TTS."""
-    global response_queue
-    try:
-        while True:
-            item_type, item_data = response_queue.get_nowait()
-            if item_type == "FULL_RESPONSE":
-                display_and_speak_spanish_response(item_data)
-            elif item_type == "ERROR":
-                add_message_to_ui("error", item_data)
-                # Clean up "Thinking..." message on error
-                remove_thinking_message()
-    except queue.Empty:
-        pass
+def process_line(line):
+    """Processes a single line from the LLM response buffer."""
+    global is_in_think_block, tts_queue, chat_history_widget
 
-def display_and_speak_spanish_response(full_text):
-    """Parses, displays, and speaks the bilingual response."""
-    global chat_history_widget, tts_queue
-    remove_thinking_message()
-    # Find and remove the <think> block
-    cleaned_text = re.sub(r"<think>.*?</think>\s*", "", full_text, flags=re.DOTALL).strip()
+    line = line.strip()
+    if not line: return
 
-    # --- Parse the response into Spanish/English pairs ---
-    spanish_for_tts = []
-    pairs = []
-    lines = cleaned_text.split('\n')
-    i = 0
-    while i < len(lines):
-        spanish_line = lines[i].strip()
-        english_line = ""
-        if i + 1 < len(lines) and lines[i+1].strip().startswith("[EN]"):
-            english_line = lines[i+1].strip()[4:].strip()
-            i += 2
-        else:
-            i += 1
-        
-        if spanish_line:
-            pairs.append((spanish_line, english_line))
-            spanish_for_tts.append(spanish_line)
+    # Simple state machine for <think> blocks
+    if "<think>" in line: is_in_think_block = True
+    if is_in_think_block:
+        if "</think>" in line:
+            is_in_think_block = False
+        return # Ignore all content related to thinking
 
-    if not pairs:
-        add_message_to_ui("error", f"Could not parse AI response: {cleaned_text}")
-        return
-        
-    # --- Display the formatted text ---
+    # Display the line and speak if it's Spanish
     chat_history_widget.config(state=tk.NORMAL)
-    chat_history_widget.insert(tk.END, "______________________________Maestro______________________________\n\n", "bot_tag")
-    for sp, en in pairs:
-        chat_history_widget.insert(tk.END, sp + "\n", "spanish_sentence")
-        if en:
-            chat_history_widget.insert(tk.END, en + "\n", "english_translation")
-    chat_history_widget.insert(tk.END, "\n")
+    if line.startswith("[EN]"):
+        translation_text = line[4:].strip()
+        chat_history_widget.insert(tk.END, translation_text + "\n", "english_translation")
+    else:
+        chat_history_widget.insert(tk.END, line + "\n", "spanish_sentence")
+        if tts_enabled.get() and tts_initialized_successfully:
+            tts_queue.put(line)
+    
     chat_history_widget.config(state=tk.DISABLED)
     chat_history_widget.see(tk.END)
 
-    # --- Speak the Spanish part ---
-    if tts_enabled.get() and tts_initialized_successfully and spanish_for_tts:
-        full_spanish_text = " ".join(spanish_for_tts)
-        tts_queue.put(full_spanish_text)
+
+def process_stream_queue():
+    """Processes items from Ollama stream queue for UI and TTS."""
+    global stream_queue, chat_history_widget, stream_buffer, is_in_think_block
+
+    try:
+        while True:
+            item_type, item_data = stream_queue.get_nowait()
+
+            if item_type == "START":
+                remove_thinking_message()
+                chat_history_widget.config(state=tk.NORMAL)
+                chat_history_widget.insert(tk.END, "______________________________Maestro______________________________\n\n", "bot_tag")
+                chat_history_widget.config(state=tk.DISABLED)
+
+            elif item_type == "CHUNK":
+                stream_buffer += item_data
+                while '\n' in stream_buffer:
+                    line, stream_buffer = stream_buffer.split('\n', 1)
+                    process_line(line)
+
+            elif item_type == "END":
+                if stream_buffer:
+                    process_line(stream_buffer)
+                    stream_buffer = ""
+                chat_history_widget.config(state=tk.NORMAL)
+                chat_history_widget.insert(tk.END, "\n")
+                chat_history_widget.config(state=tk.DISABLED)
+                chat_history_widget.see(tk.END)
+                is_in_think_block = False
+                return
+
+            elif item_type == "ERROR":
+                remove_thinking_message()
+                add_message_to_ui("error", item_data)
+                global stream_in_progress
+                stream_in_progress = False
+                return
+
+    except queue.Empty:
+        pass
+
+    if stream_in_progress:
+        window.after(50, process_stream_queue)
+
 
 # ===================
 # UI Helpers
@@ -981,8 +989,8 @@ def add_message_to_ui(role, content, tag_suffix=""):
     if role == "user":
         chat_history_widget.insert(tk.END, "________________________________You________________________________ \n\n", "user_tag")
         chat_history_widget.insert(tk.END, content + "\n\n", "user_message"+tag_suffix)
-    elif role == "assistant":
-        chat_history_widget.insert(tk.END, "______________________________Maestro______________________________\n\n", "bot_tag")
+    elif role == "assistant": # This role is now handled by streaming
+        pass
     elif role == "error":
         chat_history_widget.insert(tk.END, f"Error: {content}\n\n", "error"+tag_suffix)
     elif role == "status":
@@ -999,18 +1007,12 @@ def remove_thinking_message():
     if thinking_start_index:
         try:
             chat_history_widget.config(state=tk.NORMAL)
-            # Define the exact text that was inserted to calculate the end index
             thinking_text_content = "Thinking...\n"
             end_thinking = f"{thinking_start_index}+{len(thinking_text_content)}c"
             
-            # Delete the "Thinking..." text itself
-            chat_history_widget.delete(thinking_start_index, end_thinking)
+            if chat_history_widget.get(thinking_start_index, end_thinking) == thinking_text_content:
+                chat_history_widget.delete(thinking_start_index, end_thinking)
             
-            # The "Ollama: " tag was inserted before the index was taken, so we go back from there
-            tag_start_index = f"{thinking_start_index} - 8 chars" # "Ollama: " is 8 chars
-            if "Ollama: " in chat_history_widget.get(tag_start_index, thinking_start_index):
-                 chat_history_widget.delete(tag_start_index, thinking_start_index)
-
             chat_history_widget.config(state=tk.DISABLED)
         except tk.TclError as e:
             print(f"UI Error removing 'Thinking...' message (might be benign): {e}")
@@ -1026,9 +1028,9 @@ def select_model(event=None):
         print(f"[Ollama] Model selected: {current_model}")
 
 def send_message(event=None):
-    global messages, selected_image_path, image_sent_in_history, response_in_progress, response_done_event, thinking_start_index
+    global messages, selected_image_path, image_sent_in_history, stream_in_progress, stream_done_event, thinking_start_index
 
-    if response_in_progress:
+    if stream_in_progress:
         add_message_to_ui("error", "Please wait for the current response to complete.")
         return
 
@@ -1041,8 +1043,8 @@ def send_message(event=None):
         return
 
     send_button.config(state=tk.DISABLED)
-    response_in_progress = True
-    response_done_event.clear()
+    stream_in_progress = True
+    stream_done_event.clear()
 
     display_text = user_text + (f" [Image: {os.path.basename(image_to_send)}]" if image_to_send else "")
     add_message_to_ui("user", display_text if display_text else "[Image Attached]")
@@ -1071,16 +1073,12 @@ def send_message(event=None):
         image_sent_in_history = True
 
     def check_done():
-        # First, process any completed response in the queue
-        process_response_queue()
-        
-        if response_done_event.is_set():
-            # Worker is finished, re-enable the button
+        if stream_done_event.is_set():
             send_button.config(state=tk.NORMAL)
         else:
-            # Worker still running, check again
             window.after(100, check_done)
 
+    window.after(50, process_stream_queue)
     window.after(100, check_done)
 
 
