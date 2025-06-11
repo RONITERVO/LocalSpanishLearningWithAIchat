@@ -94,12 +94,7 @@ Clone the repository:
 
 git clone https://github.com/your-username/SpanishTutorApp.git
 cd SpanishTutorApp
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-Bash
-IGNORE_WHEN_COPYING_END
+
 
 Create and activate a virtual environment (recommended):
 
