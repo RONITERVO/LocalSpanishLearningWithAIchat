@@ -159,23 +159,29 @@ def reset_user_activity_timer():
 
 def check_user_inactivity():
     """Checks if the user has been inactive and prompts the AI if needed."""
-    global last_user_activity_time, inactivity_timer_id, inactivity_prompt_sent, stream_in_progress, messages
+    global last_user_activity_time, inactivity_timer_id, inactivity_prompt_sent, stream_in_progress, messages, tts_busy, tts_busy_lock
 
     current_time = time.time() * 1000
     elapsed_time = current_time - last_user_activity_time
+    
+    with tts_busy_lock:
+        is_tts_active = tts_busy
     
     # Conditions to prompt:
     # 1. Elapsed time is over the threshold.
     # 2. We haven't already sent an inactivity prompt for this silence period.
     # 3. The AI is not currently generating a response.
     # 4. There is an existing conversation to continue (messages list is not empty).
-    if elapsed_time > USER_INACTIVITY_THRESHOLD and not inactivity_prompt_sent and not stream_in_progress and messages:
+    # 5. The AI is not currently speaking.
+    if elapsed_time > USER_INACTIVITY_THRESHOLD and not inactivity_prompt_sent and not stream_in_progress and messages and not is_tts_active:
         print("[Inactivity] User has been inactive, prompting AI to continue.")
         inactivity_prompt_sent = True # Mark that we've sent the prompt
         prompt_ai_for_continuation()
 
     # Schedule the next check
     inactivity_timer_id = window.after(USER_INACTIVITY_CHECK_INTERVAL, check_user_inactivity)
+
+
 
 def prompt_ai_for_continuation():
     """Sends a special system message to the AI to continue the conversation."""
@@ -983,7 +989,6 @@ def chat_worker(user_message_content, system_prompt_content, image_path=None):
     assistant_response = ""
     try:
         print(f"[Ollama] Sending request to model {current_model}...")
-        reset_user_activity_timer() # This is the new line to add
         stream = ollama.chat(model=current_model, messages=history_for_ollama, stream=True)
         
         stream_queue.put(("START", None))
@@ -1064,7 +1069,23 @@ def process_stream_queue():
                 chat_history_widget.config(state=tk.DISABLED)
                 chat_history_widget.see(tk.END)
                 is_in_think_block = False
-                reset_user_activity_timer()
+
+                def wait_for_tts_and_reset():
+                    """Polls to see if TTS is done, then resets the inactivity timer."""
+                    with tts_busy_lock:
+                        is_busy = tts_busy
+                    
+                    if not tts_queue.empty() or is_busy:
+                        window.after(200, wait_for_tts_and_reset)
+                    else:
+                        print("[Inactivity] TTS complete. Resetting user inactivity timer.")
+                        reset_user_activity_timer()
+                
+                if tts_enabled.get() and tts_initialized_successfully:
+                    wait_for_tts_and_reset()
+                else:
+                    reset_user_activity_timer()
+                
                 return
 
             elif item_type == "ERROR":
@@ -1072,6 +1093,7 @@ def process_stream_queue():
                 add_message_to_ui("error", item_data)
                 global stream_in_progress
                 stream_in_progress = False
+                reset_user_activity_timer()
                 return
 
     except queue.Empty:
