@@ -47,6 +47,10 @@ WINDOW_GEOMETRY = "850x850"
 DEFAULT_OLLAMA_MODEL = "gemma3:27b"
 DEFAULT_WHISPER_MODEL_SIZE = "turbo-large" # Faster startup, change to 'medium' or 'large' for better accuracy
 
+# --- Conversation Continuation ---
+USER_INACTIVITY_CHECK_INTERVAL = 5000   # Check every 5 seconds
+USER_INACTIVITY_THRESHOLD = 20000       # Prompt after 20 seconds of inactivity (in milliseconds)
+
 # --- Whisper ---
 WHISPER_LANGUAGES = [
     ("Auto Detect", None), ("English", "en"), ("Spanish", "es"), ("Finnish", "fi"), ("Swedish", "sv"),
@@ -101,6 +105,11 @@ thinking_start_index = None
 stream_buffer = ""
 is_in_think_block = False
 
+# --- Inactivity Tracking ---
+last_user_activity_time = 0
+inactivity_timer_id = None
+inactivity_prompt_sent = False
+
 # --- TTS ---
 tts_engine = None
 tts_queue = queue.Queue()
@@ -138,6 +147,98 @@ audio_frames_buffer = deque()
 vad_audio_buffer = deque(maxlen=int(RATE / VAD_CHUNK * 1.5))
 temp_audio_file_path = None
 
+# ===========================
+# Conversation Continuation
+# ===========================
+
+def reset_user_activity_timer():
+    """Resets the timer tracking user's last activity."""
+    global last_user_activity_time, inactivity_prompt_sent
+    last_user_activity_time = time.time() * 1000
+    inactivity_prompt_sent = False
+
+def check_user_inactivity():
+    """Checks if the user has been inactive and prompts the AI if needed."""
+    global last_user_activity_time, inactivity_timer_id, inactivity_prompt_sent, stream_in_progress, messages
+
+    current_time = time.time() * 1000
+    elapsed_time = current_time - last_user_activity_time
+    
+    # Conditions to prompt:
+    # 1. Elapsed time is over the threshold.
+    # 2. We haven't already sent an inactivity prompt for this silence period.
+    # 3. The AI is not currently generating a response.
+    # 4. There is an existing conversation to continue (messages list is not empty).
+    if elapsed_time > USER_INACTIVITY_THRESHOLD and not inactivity_prompt_sent and not stream_in_progress and messages:
+        print("[Inactivity] User has been inactive, prompting AI to continue.")
+        inactivity_prompt_sent = True # Mark that we've sent the prompt
+        prompt_ai_for_continuation()
+
+    # Schedule the next check
+    inactivity_timer_id = window.after(USER_INACTIVITY_CHECK_INTERVAL, check_user_inactivity)
+
+def prompt_ai_for_continuation():
+    """Sends a special system message to the AI to continue the conversation."""
+    global stream_in_progress, stream_done_event, thinking_start_index
+
+    if stream_in_progress:
+        return # Don't interrupt if the AI is already talking
+
+    # Define the special prompt for the AI
+    continuation_prompt = (
+        "The user has been silent for a while. To keep the conversation going, "
+        "proactively say something. You could ask a follow-up question based on the last topic, "
+        "introduce a new related idea, or ask a general question like 'What are you thinking?'. "
+        "Make it natural and encouraging. IMPORTANT: Do not mention that the user was silent. Just continue the conversation. "
+        "Remember to follow your primary rules: reply in Spanish with English translations."
+    )
+    
+    # Get the main system prompt from the UI
+    system_prompt_text = system_prompt_input_widget.get("1.0", tk.END).strip()
+    
+    # Combine the main system prompt with our special continuation instruction for this one call
+    # This special instruction is NOT saved to the main history.
+    temp_system_content = f"{system_prompt_text}\n\n[Internal Instruction]: {continuation_prompt}"
+
+    # Set up the stream and "Thinking..." indicator
+    send_button.config(state=tk.DISABLED)
+    stream_in_progress = True
+    stream_done_event.clear()
+
+    chat_history_widget.config(state=tk.NORMAL)
+    thinking_start_index = chat_history_widget.index(tk.INSERT)
+    chat_history_widget.insert(tk.INSERT, "Thinking...\n", "thinking")
+    chat_history_widget.see(tk.END)
+    chat_history_widget.config(state=tk.DISABLED)
+    window.update_idletasks()
+
+    # Stop any ongoing TTS
+    if tts_engine and tts_enabled.get():
+        try: tts_engine.stop()
+        except: pass
+        while not tts_queue.empty():
+            try: tts_queue.get_nowait()
+            except queue.Empty: break
+        with tts_busy_lock: tts_busy = False
+
+    # Start the chat worker thread. Notice we pass an empty string for the user message
+    # and our special combined prompt for the system prompt. The user message is left empty in the history.
+    thread = threading.Thread(
+        target=chat_worker, 
+        args=("", temp_system_content, None), 
+        daemon=True
+    )
+    thread.start()
+
+    # This part is the same as in send_message, to re-enable the button when done
+    def check_done():
+        if stream_done_event.is_set():
+            send_button.config(state=tk.NORMAL)
+        else:
+            window.after(100, check_done)
+
+    window.after(50, process_stream_queue)
+    window.after(100, check_done)
 
 #============================
 #System Prompt Management
@@ -220,7 +321,6 @@ def clear_system_prompt_fields():
     system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
 
 
-# Snippet 1: Define the apply_system_prompt function
 def apply_system_prompt():
     """
     Handles the 'Apply' button click for system prompts.
@@ -242,12 +342,14 @@ def apply_system_prompt():
             system_prompt_input_widget.delete("1.0", tk.END)
             system_prompt_input_widget.insert("1.0", prompt_text_from_dropdown)
             add_message_to_ui("status", f"System prompt '{selected_name_in_dropdown}' from dropdown has been reloaded and is now active.")
+            prompt_status.config(text=f"Active: '{selected_name_in_dropdown}'", fg="green")
         else:
             add_message_to_ui("status", f"System prompt '{selected_name_in_dropdown}' from dropdown is active.")
+            prompt_status.config(text=f"Active: '{selected_name_in_dropdown}'", fg="green")
     elif current_text_in_input_widget:
         # No valid/specific prompt selected in dropdown (it's "" or invalid), but the text box has content.
         add_message_to_ui("status", "Custom system prompt from text input is active.")
-        # The text in system_prompt_input_widget is already what we want, no change needed to the widget.
+        prompt_status.config(text="Active: Custom unsaved prompt", fg="green")
     else:
         # No specific prompt in dropdown AND text input is empty.
         # This typically happens if the user selected the blank option in the dropdown (which clears the text box).
@@ -255,7 +357,22 @@ def apply_system_prompt():
         system_prompt_input_widget.delete("1.0", tk.END)
         system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
         add_message_to_ui("status", "Default system prompt has been loaded and is now active.")
+        prompt_status.config(text="Active: Default system prompt", fg="green")
 
+
+
+def on_text_change(event=None):
+    """Indicate when the text has been modified but not applied"""
+    current_selection = system_prompt_selector.get()
+    if current_selection:
+        original = saved_system_prompts.get(current_selection, "")
+        current = system_prompt_input_widget.get("1.0", "end-1c")
+        if original != current:
+            prompt_status.config(text=f"Modified: '{current_selection}' (not applied)", fg="orange")
+        else:
+            prompt_status.config(text=f"Active: '{current_selection}'", fg="green")
+    else:
+        prompt_status.config(text="Custom prompt (not applied)", fg="orange")
 
 # ===================
 # TTS Setup & Control
@@ -560,6 +677,7 @@ def vad_worker():
 
                     if speech_timestamps:
                         frames_since_last_speech = 0
+                        reset_user_activity_timer()
                         if not is_recording_for_whisper:
                             print("[VAD Worker] Speech started, beginning recording.")
                             is_recording_for_whisper = True
@@ -865,6 +983,7 @@ def chat_worker(user_message_content, system_prompt_content, image_path=None):
     assistant_response = ""
     try:
         print(f"[Ollama] Sending request to model {current_model}...")
+        reset_user_activity_timer() # This is the new line to add
         stream = ollama.chat(model=current_model, messages=history_for_ollama, stream=True)
         
         stream_queue.put(("START", None))
@@ -945,6 +1064,7 @@ def process_stream_queue():
                 chat_history_widget.config(state=tk.DISABLED)
                 chat_history_widget.see(tk.END)
                 is_in_think_block = False
+                reset_user_activity_timer()
                 return
 
             elif item_type == "ERROR":
@@ -1029,6 +1149,7 @@ def select_model(event=None):
 
 def send_message(event=None):
     global messages, selected_image_path, image_sent_in_history, stream_in_progress, stream_done_event, thinking_start_index
+
 
     if stream_in_progress:
         add_message_to_ui("error", "Please wait for the current response to complete.")
@@ -1205,21 +1326,37 @@ recording_indicator_widget.pack(fill=tk.X, pady=(5,2), padx=2)
 # --- System Prompt Frame ---
 system_prompt_frame = tk.LabelFrame(main_frame, text="System Prompt (Defines AI Behavior)", padx=5, pady=5)
 system_prompt_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
-system_prompt_frame.columnconfigure(0, weight=1); system_prompt_frame.columnconfigure(1, weight=0)
-sys_prompt_left_frame = tk.Frame(system_prompt_frame)
-sys_prompt_left_frame.grid(row=0, column=0, sticky="nsew")
-system_prompt_selector = ttk.Combobox(sys_prompt_left_frame, state="readonly", width=40)
-system_prompt_selector.pack(fill=tk.X, expand=True, pady=(0, 5))
+
+# Dropdown row with Apply and Delete buttons side-by-side
+dropdown_frame = tk.Frame(system_prompt_frame)
+dropdown_frame.pack(fill=tk.X, expand=True, pady=(0, 5))
+tk.Label(dropdown_frame, text="Saved prompts:", anchor="w").pack(side=tk.LEFT, padx=(0, 5))
+system_prompt_selector = ttk.Combobox(dropdown_frame, state="readonly", width=40)
+system_prompt_selector.pack(side=tk.LEFT, fill=tk.X, expand=True)
 system_prompt_selector.bind("<<ComboboxSelected>>", on_system_prompt_selected)
-system_prompt_input_widget = scrolledtext.ScrolledText(sys_prompt_left_frame, wrap=tk.WORD, height=4, font=("Arial", 9))
-system_prompt_input_widget.pack(fill=tk.BOTH, expand=True)
+apply_button = tk.Button(dropdown_frame, text="Apply Selected", command=apply_system_prompt, bg="#e0e0e0")
+apply_button.pack(side=tk.LEFT, padx=5)
+delete_button = tk.Button(dropdown_frame, text="Delete Selected", command=delete_selected_system_prompt)
+delete_button.pack(side=tk.LEFT)
+
+# Status indicator for the prompt
+prompt_status = tk.Label(system_prompt_frame, text="Edit prompt below, then Apply to activate or Save to store", 
+                         font=("Arial", 8, "italic"), anchor="w", fg="gray")
+prompt_status.pack(fill=tk.X, pady=(0, 2))
+
+# Text area for prompt editing
+system_prompt_input_widget = scrolledtext.ScrolledText(system_prompt_frame, wrap=tk.WORD, height=4, font=("Arial", 9))
+system_prompt_input_widget.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
 system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
-sys_prompt_button_frame = tk.Frame(system_prompt_frame)
-sys_prompt_button_frame.grid(row=0, column=1, sticky="ns", padx=(10, 0))
-tk.Button(sys_prompt_button_frame, text="Save", command=save_current_system_prompt).pack(fill=tk.X, pady=2)
-tk.Button(sys_prompt_button_frame, text="Apply", command=apply_system_prompt).pack(fill=tk.X, pady=2) # <-- New Button
-tk.Button(sys_prompt_button_frame, text="Delete", command=delete_selected_system_prompt).pack(fill=tk.X, pady=2)
-tk.Button(sys_prompt_button_frame, text="Clear", command=clear_system_prompt_fields).pack(fill=tk.X, pady=2)
+system_prompt_input_widget.bind("<<Modified>>", lambda e: (on_text_change(), system_prompt_input_widget.edit_modified(False)))
+
+# Buttons below the text area
+button_frame = tk.Frame(system_prompt_frame)
+button_frame.pack(fill=tk.X, expand=True)
+clear_button = tk.Button(button_frame, text="Clear Text", command=clear_system_prompt_fields)
+clear_button.pack(side=tk.LEFT, padx=(0, 5))
+save_button = tk.Button(button_frame, text="Save As New Prompt", command=save_current_system_prompt, bg="#d0e0ff")
+save_button.pack(side=tk.LEFT)
 
 # --- Chat History ---
 chat_frame = tk.LabelFrame(main_frame, text="Conversation History", padx=5, pady=5)
@@ -1279,6 +1416,11 @@ else:
 window.after(1000, toggle_tts)
 window.after(1500, toggle_voice_recognition)
 setup_paste_binding()
+
+user_input_widget.bind("<KeyRelease>", lambda e: reset_user_activity_timer())
+# Start the inactivity checker
+reset_user_activity_timer() # Initialize the timer
+window.after(USER_INACTIVITY_CHECK_INTERVAL, check_user_inactivity)
 
 # --- Start Main Loop ---
 window.mainloop()
