@@ -912,11 +912,13 @@ def display_and_speak_spanish_response(full_text):
     """Parses, displays, and speaks the bilingual response."""
     global chat_history_widget, tts_queue
     remove_thinking_message()
+    # Find and remove the <think> block
+    cleaned_text = re.sub(r"<think>.*?</think>\s*", "", full_text, flags=re.DOTALL).strip()
 
     # --- Parse the response into Spanish/English pairs ---
     spanish_for_tts = []
     pairs = []
-    lines = full_text.strip().split('\n')
+    lines = cleaned_text.split('\n')
     i = 0
     while i < len(lines):
         spanish_line = lines[i].strip()
@@ -932,7 +934,7 @@ def display_and_speak_spanish_response(full_text):
             spanish_for_tts.append(spanish_line)
 
     if not pairs:
-        add_message_to_ui("error", f"Could not parse AI response: {full_text}")
+        add_message_to_ui("error", f"Could not parse AI response: {cleaned_text}")
         return
         
     # --- Display the formatted text ---
