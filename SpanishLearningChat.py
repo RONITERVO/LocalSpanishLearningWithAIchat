@@ -220,6 +220,43 @@ def clear_system_prompt_fields():
     system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
 
 
+# Snippet 1: Define the apply_system_prompt function
+def apply_system_prompt():
+    """
+    Handles the 'Apply' button click for system prompts.
+    It prioritizes activating the prompt selected in the dropdown.
+    - If a valid prompt is selected in the dropdown, its text is loaded/reloaded into the input widget and confirmed as active.
+    - If no specific prompt is selected in the dropdown (e.g., blank option) BUT the text box has content, that custom text is confirmed as active.
+    - If both the dropdown selection is blank/invalid and the text box is empty, the DEFAULT_SYSTEM_PROMPT is loaded and confirmed as active.
+    The system prompt actually used by the AI is always what's in system_prompt_input_widget when a message is sent.
+    """
+    global system_prompt_selector, system_prompt_input_widget, saved_system_prompts, DEFAULT_SYSTEM_PROMPT
+    
+    selected_name_in_dropdown = system_prompt_selector.get()
+    current_text_in_input_widget = system_prompt_input_widget.get("1.0", tk.END).strip()
+
+    if selected_name_in_dropdown and selected_name_in_dropdown in saved_system_prompts:
+        # A specific, named prompt is selected in the dropdown. This takes precedence.
+        prompt_text_from_dropdown = saved_system_prompts[selected_name_in_dropdown]
+        if current_text_in_input_widget != prompt_text_from_dropdown:
+            system_prompt_input_widget.delete("1.0", tk.END)
+            system_prompt_input_widget.insert("1.0", prompt_text_from_dropdown)
+            add_message_to_ui("status", f"System prompt '{selected_name_in_dropdown}' from dropdown has been reloaded and is now active.")
+        else:
+            add_message_to_ui("status", f"System prompt '{selected_name_in_dropdown}' from dropdown is active.")
+    elif current_text_in_input_widget:
+        # No valid/specific prompt selected in dropdown (it's "" or invalid), but the text box has content.
+        add_message_to_ui("status", "Custom system prompt from text input is active.")
+        # The text in system_prompt_input_widget is already what we want, no change needed to the widget.
+    else:
+        # No specific prompt in dropdown AND text input is empty.
+        # This typically happens if the user selected the blank option in the dropdown (which clears the text box).
+        # In this case, load and activate the DEFAULT_SYSTEM_PROMPT.
+        system_prompt_input_widget.delete("1.0", tk.END)
+        system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
+        add_message_to_ui("status", "Default system prompt has been loaded and is now active.")
+
+
 # ===================
 # TTS Setup & Control
 # ===================
@@ -1180,6 +1217,7 @@ system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
 sys_prompt_button_frame = tk.Frame(system_prompt_frame)
 sys_prompt_button_frame.grid(row=0, column=1, sticky="ns", padx=(10, 0))
 tk.Button(sys_prompt_button_frame, text="Save", command=save_current_system_prompt).pack(fill=tk.X, pady=2)
+tk.Button(sys_prompt_button_frame, text="Apply", command=apply_system_prompt).pack(fill=tk.X, pady=2) # <-- New Button
 tk.Button(sys_prompt_button_frame, text="Delete", command=delete_selected_system_prompt).pack(fill=tk.X, pady=2)
 tk.Button(sys_prompt_button_frame, text="Clear", command=clear_system_prompt_fields).pack(fill=tk.X, pady=2)
 
