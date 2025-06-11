@@ -1,4 +1,4 @@
-Local. No internet needed after first launch (Downloads necessary packages automatically during first launch). 
+Local. No internet needed after first launch (Downloads most of the necessary packages automatically during first launch. Read further for full step-by-step setup instructions). 
 Spanish Tutor AI 🇪🇸🤖
 
 A desktop application for practicing Spanish conversation with a local AI, featuring real-time voice recognition (Speech-to-Text) and spoken responses (Text-to-Speech). Built with Python, Ollama, and Whisper.
