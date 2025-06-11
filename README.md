@@ -1,5 +1,3 @@
-Of course! Here is a comprehensive and well-structured GitHub description for your SpanishTutorApp.py. This description is written in Markdown format, perfect for a README.md file.
-
 Spanish Tutor AI 🇪🇸🤖
 
 A desktop application for practicing Spanish conversation with a local AI, featuring real-time voice recognition (Speech-to-Text) and spoken responses (Text-to-Speech). Built with Python, Ollama, and Whisper.
