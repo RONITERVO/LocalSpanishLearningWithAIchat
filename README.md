@@ -105,32 +105,14 @@ python -m venv venv
 # macOS / Linux
 python3 -m venv venv
 source venv/bin/activate
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-Bash
-IGNORE_WHEN_COPYING_END
 
 Install the required Python packages:
 
 pip install -r requirements.txt
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-Bash
-IGNORE_WHEN_COPYING_END
 
 If a requirements.txt is not provided, install the packages manually:
 
 pip install ollama tkinterdnd2 Pillow pyttsx3 openai-whisper faster-whisper pyaudio torch torchaudio PyMuPDF
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-Bash
-IGNORE_WHEN_COPYING_END
 
 (Note: torch and torchaudio are large libraries required for Whisper and VAD).
 
@@ -139,13 +121,6 @@ Running the Application
 With your virtual environment activated and Ollama running in the background, simply run the script:
 
 python SpanishTutorApp.py
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-Bash
-IGNORE_WHEN_COPYING_END
-kullanım
 
 Select an AI Model: Choose an available Ollama model from the top-left dropdown.
 
