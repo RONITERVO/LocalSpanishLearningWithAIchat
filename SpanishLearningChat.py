@@ -43,6 +43,9 @@ PRE_SPEECH_BUFFER_SECONDS = 0.3 # Keep audio before speech starts
 APP_TITLE = "Spanish Conversation Practice with AI"
 LISTENING_BORDER_COLOR = "#007AFF" # A nice blue for feedback
 DEFAULT_BORDER_COLOR = "#E5E5E5"   # The default border color
+PULSE_BORDER_COLOR = "#87CEFA"     # Lighter blue for volume pulse
+MIN_PULSE_THICKNESS = 2            # Min border thickness for pulse
+MAX_PULSE_THICKNESS = 5            # Max border thickness for pulse
 
 # --- Models ---
 DEFAULT_OLLAMA_MODEL = "No model selected" 
@@ -798,6 +801,24 @@ def vad_worker():
                     was_tts_busy = False
                 
                 audio_chunk_np = np.frombuffer(data, dtype=np.int16)
+
+                # --- START: New Volume Feedback Code ---
+                # Calculate volume (RMS) and update UI feedback
+                # Use float64 for precision to avoid overflow
+                rms = np.sqrt(np.mean(audio_chunk_np.astype(np.float64)**2))
+                
+                # Normalize the volume on a logarithmic scale for better perception
+                # We map a sensible RMS range (e.g., 50 to 4000) to a 0-1 scale
+                log_rms = np.log10(rms + 1)
+                log_min = 1.7 # Corresponds to RMS of ~50 (quiet)
+                log_max = 3.6 # Corresponds to RMS of ~4000 (loud)
+                normalized_volume = (log_rms - log_min) / (log_max - log_min)
+                normalized_volume = max(0.0, min(1.0, normalized_volume)) # Clamp between 0 and 1
+
+                # Schedule the UI update on the main thread
+                window.after(0, update_mic_volume_feedback, normalized_volume)
+                # --- END: New Volume Feedback Code ---
+
                 vad_audio_buffer.append(audio_chunk_np)
                 temp_pre_speech_buffer.append(data)
 
@@ -1242,6 +1263,36 @@ def process_stream_queue():
 # ===================
 # UI Helpers
 # ===================
+
+def update_mic_volume_feedback(normalized_volume):
+    """Updates the input container border to show mic volume."""
+    # If we are in the "recording" state (solid blue border) or the UI element
+    # doesn't exist, we don't want the pulse to interfere.
+    if is_recording_for_whisper or not input_container:
+        return
+
+    # Map the normalized volume (0.0 to 1.0) to a thickness.
+    thickness = MIN_PULSE_THICKNESS + int(normalized_volume * (MAX_PULSE_THICKNESS - MIN_PULSE_THICKNESS))
+    
+    # Interpolate color brightness based on volume, fading from default grey to pulse blue.
+    start_rgb = (229, 229, 229) # DEFAULT_BORDER_COLOR
+    end_rgb = (135, 206, 250)   # PULSE_BORDER_COLOR (as RGB)
+
+    r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * normalized_volume)
+    g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * normalized_volume)
+    b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * normalized_volume)
+    
+    color_hex = f'#{r:02x}{g:02x}{b:02x}'
+
+    try:
+        input_container.config(
+            highlightthickness=thickness, 
+            highlightcolor=color_hex, 
+            highlightbackground=color_hex
+        )
+    except tk.TclError:
+        # This can happen if the window is being destroyed.
+        pass
 
 def start_visual_listening_feedback():
     """Changes the input container border to indicate active listening."""
