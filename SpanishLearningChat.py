@@ -350,12 +350,20 @@ def create_inactivity_settings_ui():
     global inactivity_enabled, inactivity_threshold_seconds, continuation_prompt
     global continuation_prompt_selector, prompt_text_widget
     
+    # Create collapsible header button
+    inactivity_header_button = ttk.Button(
+        controls_sidebar_frame,
+        text="Auto-Continuation ▸",
+        command=lambda: toggle_frame(inactivity_frame, inactivity_header_button)
+    )
+    inactivity_header_button.pack(fill=tk.X, pady=(0, 5))
+    
     # Create frame
-    inactivity_frame = tk.LabelFrame(main_frame, text="Auto-Continuation Settings", padx=5, pady=5)
-    inactivity_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
+    inactivity_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
+    # Don't pack by default - collapsed
     
     # Top row with checkbox and threshold slider
-    top_row = tk.Frame(inactivity_frame)
+    top_row = tk.Frame(inactivity_frame, bg="#F5F5F7")
     top_row.pack(fill=tk.X, pady=(0, 5))
     
     # Enable/disable checkbox
@@ -368,7 +376,7 @@ def create_inactivity_settings_ui():
     inactivity_checkbox.pack(side=tk.LEFT, padx=(0, 10))
     
     # Threshold slider
-    threshold_label = tk.Label(top_row, text="Wait time:")
+    threshold_label = tk.Label(top_row, text="Wait time:", bg="#F5F5F7")
     threshold_label.pack(side=tk.LEFT)
     
     threshold_scale = ttk.Scale(
@@ -382,14 +390,14 @@ def create_inactivity_settings_ui():
     threshold_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
     threshold_scale.configure(state=tk.NORMAL if inactivity_enabled.get() else tk.DISABLED)
     
-    threshold_value = tk.Label(top_row, text=f"{inactivity_threshold_seconds.get()} seconds", width=10)
+    threshold_value = tk.Label(top_row, text=f"{inactivity_threshold_seconds.get()} seconds", width=10, bg="#F5F5F7")
     threshold_value.pack(side=tk.LEFT)
     
     # Saved prompts dropdown row
-    prompt_dropdown_frame = tk.Frame(inactivity_frame)
+    prompt_dropdown_frame = tk.Frame(inactivity_frame, bg="#F5F5F7")
     prompt_dropdown_frame.pack(fill=tk.X, pady=(5, 0))
     
-    tk.Label(prompt_dropdown_frame, text="Saved prompts:").pack(side=tk.LEFT, padx=(0, 5))
+    tk.Label(prompt_dropdown_frame, text="Saved prompts:", bg="#F5F5F7").pack(side=tk.LEFT, padx=(0, 5))
     continuation_prompt_selector = ttk.Combobox(prompt_dropdown_frame, state="readonly", width=30)
     continuation_prompt_selector.pack(side=tk.LEFT, fill=tk.X, expand=True)
     continuation_prompt_selector.bind("<<ComboboxSelected>>", on_continuation_prompt_selected)
@@ -408,9 +416,9 @@ def create_inactivity_settings_ui():
     
     # Prompt text area with description
     tk.Label(inactivity_frame, text="Continuation Prompt (Instructions for the AI when continuing after silence):", 
-             anchor="w").pack(fill=tk.X, pady=(5, 0))
+             anchor="w", bg="#F5F5F7").pack(fill=tk.X, pady=(5, 0))
     
-    prompt_frame = tk.Frame(inactivity_frame)
+    prompt_frame = tk.Frame(inactivity_frame, bg="#F5F5F7")
     prompt_frame.pack(fill=tk.X, pady=(0, 5))
     
     prompt_text_widget = tk.Text(prompt_frame, wrap=tk.WORD, height=4, font=("Arial", 9))
@@ -429,7 +437,7 @@ def create_inactivity_settings_ui():
     prompt_text_widget.config(yscrollcommand=prompt_scrollbar.set)
     
     # Bottom button row
-    bottom_buttons = tk.Frame(inactivity_frame)
+    bottom_buttons = tk.Frame(inactivity_frame, bg="#F5F5F7")
     bottom_buttons.pack(fill=tk.X, pady=(0, 5))
     
     save_button = tk.Button(
@@ -1087,6 +1095,8 @@ def handle_image_file(file_path):
     image_sent_in_history = False
     update_image_preview(file_path)
     image_indicator.config(text=f"✓ {os.path.basename(file_path)}")
+    if 'clear_attach_button' in globals():
+        clear_attach_button.pack(side=tk.LEFT, after=attach_button, padx=5)
 
 def handle_pdf_file(file_path):
     add_message_to_ui("status", f"Loading PDF: {os.path.basename(file_path)}...")
@@ -1120,6 +1130,8 @@ def paste_image_from_clipboard(event=None):
         image_sent_in_history = False
         update_image_preview(temp_path)
         image_indicator.config(text="✓ Pasted image")
+        if 'clear_attach_button' in globals():
+            clear_attach_button.pack(side=tk.LEFT, after=attach_button, padx=5)
     except Exception as e: add_message_to_ui("error", f"Failed to paste image: {e}")
 
 def setup_paste_binding():
@@ -1354,17 +1366,27 @@ def clear_image():
     global selected_image_path, image_sent_in_history
     selected_image_path = ""
     image_sent_in_history = False
-    image_preview.configure(image="", text="No Image", width=20, height=10, bg="lightgrey")
+    image_preview.configure(image="", text="", width=0, height=0, bg="#F8F8F8")
     image_preview.image = None
-    image_indicator.config(text="No image attached")
+    image_indicator.config(text="")
+    attachment_strip.config(height=0)
+    if 'clear_attach_button' in globals():
+        clear_attach_button.pack_forget()
 
 def update_image_preview(file_path):
     try:
         img = Image.open(file_path)
-        img.thumbnail((150, 150), Image.LANCZOS)
+        img.thumbnail((80, 80), Image.LANCZOS)
         photo = ImageTk.PhotoImage(img)
         image_preview.configure(image=photo, width=img.width, height=img.height, text="")
         image_preview.image = photo
+        image_preview.pack(side=tk.LEFT, padx=5)
+        image_indicator.config(text=f"📎 {os.path.basename(file_path)}")
+        image_indicator.pack(side=tk.LEFT, padx=5)
+        attachment_strip.config(height=30)
+        attachment_strip.pack(fill=tk.X, pady=(5,0))
+        if 'clear_attach_button' in globals():
+            clear_attach_button.pack(side=tk.LEFT, after=attach_button, padx=5)
     except Exception as e:
         clear_image()
         image_indicator.config(text="Preview Error", fg="red")
@@ -1470,6 +1492,23 @@ def send_message(event=None):
 
 
 # ===================
+# UI Helper Functions
+# ===================
+
+def toggle_frame(frame, button=None):
+    """Toggle the visibility of a frame and update button text if provided."""
+    if frame.winfo_viewable():
+        frame.pack_forget()
+        if button:
+            current_text = button.cget("text")
+            button.config(text=current_text.replace("▾", "▸"))
+    else:
+        frame.pack(fill=tk.X, pady=(5, 15))
+        if button:
+            current_text = button.cget("text")
+            button.config(text=current_text.replace("▸", "▾"))
+
+# ===================
 # Main Application Setup & Loop
 # ===================
 def on_closing():
@@ -1511,18 +1550,30 @@ continuation_prompt = tk.StringVar(value=DEFAULT_CONTINUATION_PROMPT)
 main_frame = tk.Frame(window, padx=10, pady=10)
 main_frame.pack(fill=tk.BOTH, expand=True)
 
-# --- Top Controls Frame ---
-top_controls_frame = tk.Frame(main_frame)
-top_controls_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
-top_controls_frame.columnconfigure(0, weight=3)
-top_controls_frame.columnconfigure(1, weight=2)
-top_controls_frame.columnconfigure(2, weight=2)
+# --- Create Main Paned Layout ---
+paned_window = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
+paned_window.pack(fill=tk.BOTH, expand=True)
+
+# Create the two main frames
+controls_sidebar_frame = tk.Frame(paned_window, padx=10, pady=10, bg="#F5F5F7")
+conversation_frame = tk.Frame(paned_window, padx=10, pady=10)
+
+# Add them to the paned window
+paned_window.add(controls_sidebar_frame, weight=1)
+paned_window.add(conversation_frame, weight=3)
+
+# Set the initial sash position (sidebar width)
+window.after(100, lambda: paned_window.sashpos(0, 350))
 
 # --- Model Selection ---
-model_frame = tk.LabelFrame(top_controls_frame, text="Ollama Model", padx=5, pady=5)
-model_frame.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+model_heading = tk.Label(controls_sidebar_frame, text="Model", font=("Arial", 12, "bold"), anchor="w", bg="#F5F5F7")
+model_heading.pack(fill=tk.X, pady=(0, 5))
+
+model_selector_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
+model_selector_frame.pack(fill=tk.X, expand=False, pady=(0, 15))
+
 available_models = fetch_available_models()
-model_selector = ttk.Combobox(model_frame, values=available_models, state="readonly", width=25)
+model_selector = ttk.Combobox(model_selector_frame, values=available_models, state="readonly", width=25)
 if available_models:
     model_to_set = next((m for m in [current_model, DEFAULT_OLLAMA_MODEL] if m in available_models), available_models[0])
     model_selector.set(model_to_set)
@@ -1531,18 +1582,26 @@ else:
     model_selector.set("No models found"); model_selector.config(state=tk.DISABLED); current_model = None
 model_selector.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,5))
 model_selector.bind("<<ComboboxSelected>>", select_model)
-model_status = tk.Label(model_frame, text=f"Using: {current_model.split(':')[0] if current_model else 'N/A'}", font=("Arial", 8), width=15, anchor="w")
+model_status = tk.Label(model_selector_frame, text=f"Using: {current_model.split(':')[0] if current_model else 'N/A'}", font=("Arial", 8), width=15, anchor="w", bg="#F5F5F7")
 model_status.pack(side=tk.LEFT)
 
-# --- TTS Controls ---
-tts_outer_frame = tk.LabelFrame(top_controls_frame, text="Text-to-Speech", padx=5, pady=5)
-tts_outer_frame.grid(row=0, column=1, sticky="ns", padx=5)
-tts_toggle_button = ttk.Checkbutton(tts_outer_frame, text="Enable TTS", variable=tts_enabled, command=toggle_tts)
+# --- TTS Controls (Collapsible) ---
+tts_header_button = ttk.Button(
+    controls_sidebar_frame,
+    text="Text-to-Speech ▸",
+    command=lambda: toggle_frame(tts_details_frame, tts_header_button)
+)
+tts_header_button.pack(fill=tk.X, pady=(0, 5))
+
+tts_details_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
+# Don't pack by default - collapsed
+
+tts_toggle_button = ttk.Checkbutton(tts_details_frame, text="Enable TTS", variable=tts_enabled, command=toggle_tts)
 tts_toggle_button.pack(anchor="w", pady=2)
 
-voice_frame = tk.Frame(tts_outer_frame)
+voice_frame = tk.Frame(tts_details_frame, bg="#F5F5F7")
 voice_frame.pack(fill=tk.X, pady=2)
-tk.Label(voice_frame, text="Voice:", font=("Arial", 8)).pack(side=tk.LEFT)
+tk.Label(voice_frame, text="Voice:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
 available_voices = get_available_voices()
 voice_names = [v[0] for v in available_voices]
 voice_selector = ttk.Combobox(voice_frame, values=voice_names, state="disabled", width=18, font=("Arial", 8))
@@ -1561,119 +1620,147 @@ if available_voices:
     voice_selector.bind("<<ComboboxSelected>>", set_voice)
 voice_selector.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
 
-rate_frame = tk.Frame(tts_outer_frame)
+rate_frame = tk.Frame(tts_details_frame, bg="#F5F5F7")
 rate_frame.pack(fill=tk.X, pady=2)
-tk.Label(rate_frame, text="Talking speed:", font=("Arial", 8)).pack(side=tk.LEFT)
+tk.Label(rate_frame, text="Talking speed:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
 rate_scale = ttk.Scale(rate_frame, from_=80, to=300, orient=tk.HORIZONTAL, variable=tts_rate, command=set_speech_rate, state="disabled")
 rate_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-tk.Label(rate_frame, textvariable=tts_rate, width=3, font=("Arial", 8)).pack(side=tk.LEFT)
+tk.Label(rate_frame, textvariable=tts_rate, width=3, font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
 
-# --- Voice Recognition Controls ---
-voice_outer_frame = tk.LabelFrame(top_controls_frame, text="Voice Input (VAD)", padx=5, pady=5)
-voice_outer_frame.grid(row=0, column=2, sticky="ns", padx=(5, 0))
-voice_toggle_button = ttk.Checkbutton(voice_outer_frame, text="Enable Voice", variable=voice_enabled, command=toggle_voice_recognition)
+# --- Voice Recognition Controls (Collapsible) ---
+voice_header_button = ttk.Button(
+    controls_sidebar_frame,
+    text="Voice Input ▸",
+    command=lambda: toggle_frame(voice_details_frame, voice_header_button)
+)
+voice_header_button.pack(fill=tk.X, pady=(0, 5))
+
+voice_details_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
+# Don't pack by default - collapsed
+
+voice_toggle_button = ttk.Checkbutton(voice_details_frame, text="Enable Voice", variable=voice_enabled, command=toggle_voice_recognition)
 voice_toggle_button.pack(anchor="w", pady=2)
 
-whisper_settings_frame = tk.Frame(voice_outer_frame)
+whisper_settings_frame = tk.Frame(voice_details_frame, bg="#F5F5F7")
 whisper_settings_frame.pack(fill=tk.X, pady=2)
-lang_frame = tk.Frame(whisper_settings_frame)
+lang_frame = tk.Frame(whisper_settings_frame, bg="#F5F5F7")
 lang_frame.pack(fill=tk.X)
-tk.Label(lang_frame, text="Lang:", font=("Arial", 8)).pack(side=tk.LEFT)
+tk.Label(lang_frame, text="Lang:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
 whisper_language_selector = ttk.Combobox(lang_frame, values=[lang[0] for lang in WHISPER_LANGUAGES], state="readonly", width=10, font=("Arial", 8), textvariable=selected_whisper_language)
 whisper_language_selector.current(0) # Default to Auto Detect
 whisper_language_selector.pack(side=tk.LEFT, padx=2)
 whisper_language_selector.bind("<<ComboboxSelected>>", set_whisper_language)
-size_frame = tk.Frame(whisper_settings_frame)
+size_frame = tk.Frame(whisper_settings_frame, bg="#F5F5F7")
 size_frame.pack(fill=tk.X, pady=(2,0))
-tk.Label(size_frame, text="Model:", font=("Arial", 8)).pack(side=tk.LEFT)
+tk.Label(size_frame, text="Model:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
 whisper_model_size_selector = ttk.Combobox(size_frame, values=WHISPER_MODEL_SIZES, state="readonly", width=10, font=("Arial", 8), textvariable=selected_whisper_model)
 whisper_model_size_selector.pack(side=tk.LEFT, padx=2)
 whisper_model_size_selector.bind("<<ComboboxSelected>>", set_whisper_model_size)
-auto_send_checkbox = ttk.Checkbutton(voice_outer_frame, text="Auto-send after transcription", variable=auto_send_after_transcription)
+auto_send_checkbox = ttk.Checkbutton(voice_details_frame, text="Auto-send after transcription", variable=auto_send_after_transcription)
 auto_send_checkbox.pack(anchor="w", pady=2)
-auto_clear_checkbox = ttk.Checkbutton(voice_outer_frame, text="Replace existing text with new content", variable=auto_clear_on_new_content)
+auto_clear_checkbox = ttk.Checkbutton(voice_details_frame, text="Replace existing text with new content", variable=auto_clear_on_new_content)
 auto_clear_checkbox.pack(anchor="w", pady=2)
-recording_indicator_widget = tk.Label(voice_outer_frame, text="Voice Disabled", font=("Arial", 9, "italic"), fg="grey", anchor="w")
+recording_indicator_widget = tk.Label(voice_details_frame, text="Voice Disabled", font=("Arial", 9, "italic"), fg="grey", anchor="w", bg="#F5F5F7")
 recording_indicator_widget.pack(fill=tk.X, pady=(5,2), padx=2)
 
-# --- System Prompt Frame ---
-system_prompt_frame = tk.LabelFrame(main_frame, text="System Prompt (Defines AI Behavior)", padx=5, pady=5)
-system_prompt_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
+# --- System Prompt Frame (Collapsible) ---
+system_prompt_header_button = ttk.Button(
+    controls_sidebar_frame,
+    text="System Prompt ▸",
+    command=lambda: toggle_frame(system_prompt_details_frame, system_prompt_header_button)
+)
+system_prompt_header_button.pack(fill=tk.X, pady=(0, 5))
+
+system_prompt_details_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
+# Don't pack by default - collapsed
 
 # Dropdown row with Apply and Delete buttons side-by-side
-dropdown_frame = tk.Frame(system_prompt_frame)
+dropdown_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
 dropdown_frame.pack(fill=tk.X, expand=True, pady=(0, 5))
-tk.Label(dropdown_frame, text="Saved prompts:", anchor="w").pack(side=tk.LEFT, padx=(0, 5))
-system_prompt_selector = ttk.Combobox(dropdown_frame, state="readonly", width=40)
+tk.Label(dropdown_frame, text="Saved prompts:", anchor="w", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT, padx=(0, 5))
+system_prompt_selector = ttk.Combobox(dropdown_frame, state="readonly", width=25, font=("Arial", 8))
 system_prompt_selector.pack(side=tk.LEFT, fill=tk.X, expand=True)
 system_prompt_selector.bind("<<ComboboxSelected>>", on_system_prompt_selected)
-apply_button = tk.Button(dropdown_frame, text="Apply Selected", command=apply_system_prompt, bg="#e0e0e0")
+apply_button = tk.Button(dropdown_frame, text="Apply", command=apply_system_prompt, font=("Arial", 8), relief=tk.FLAT)
 apply_button.pack(side=tk.LEFT, padx=5)
-delete_button = tk.Button(dropdown_frame, text="Delete Selected", command=delete_selected_system_prompt)
+delete_button = tk.Button(dropdown_frame, text="Delete", command=delete_selected_system_prompt, font=("Arial", 8), relief=tk.FLAT)
 delete_button.pack(side=tk.LEFT)
 
 # Status indicator for the prompt
-prompt_status = tk.Label(system_prompt_frame, text="Edit prompt below, then Apply to activate or Save to store", 
-                         font=("Arial", 8, "italic"), anchor="w", fg="gray")
+prompt_status = tk.Label(system_prompt_details_frame, text="Edit prompt below, then Apply to activate or Save to store", 
+                         font=("Arial", 7, "italic"), anchor="w", fg="gray", bg="#F5F5F7")
 prompt_status.pack(fill=tk.X, pady=(0, 2))
 
 # Text area for prompt editing
-system_prompt_input_widget = scrolledtext.ScrolledText(system_prompt_frame, wrap=tk.WORD, height=4, font=("Arial", 9))
+system_prompt_input_widget = scrolledtext.ScrolledText(system_prompt_details_frame, wrap=tk.WORD, height=6, font=("Arial", 8))
 system_prompt_input_widget.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
 system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
 system_prompt_input_widget.bind("<<Modified>>", lambda e: (on_text_change(), system_prompt_input_widget.edit_modified(False)))
 
 # Buttons below the text area
-button_frame = tk.Frame(system_prompt_frame)
+button_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
 button_frame.pack(fill=tk.X, expand=True)
-clear_button = tk.Button(button_frame, text="Reset to default", command=clear_system_prompt_fields)
+clear_button = tk.Button(button_frame, text="Reset", command=clear_system_prompt_fields, font=("Arial", 8), relief=tk.FLAT)
 clear_button.pack(side=tk.RIGHT, padx=(0, 5))
-save_button = tk.Button(button_frame, text="Save As New Prompt", command=save_current_system_prompt, bg="#d0e0ff")
+save_button = tk.Button(button_frame, text="Save As New", command=save_current_system_prompt, font=("Arial", 8), relief=tk.FLAT, bg="#d0e0ff")
 save_button.pack(side=tk.LEFT)
 
 # --- Inactivity Settings Frame ---
 inactivity_settings_frame = create_inactivity_settings_ui()
 
 # --- Chat History ---
-chat_frame = tk.LabelFrame(main_frame, text="Conversation History", padx=5, pady=5)
-chat_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-chat_history_widget = scrolledtext.ScrolledText(chat_frame, wrap=tk.WORD, height=15, state=tk.DISABLED, font=("Arial", 10))
-chat_history_widget.pack(fill=tk.BOTH, expand=True)
+chat_history_widget = scrolledtext.ScrolledText(conversation_frame, wrap=tk.WORD, height=15, state=tk.DISABLED, font=("Arial", 10), relief=tk.FLAT, bd=0)
+chat_history_widget.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-# Define text tags
-chat_history_widget.tag_config("user_tag", foreground="#007bff", font=("Arial", 10, "bold"))
-chat_history_widget.tag_config("user_message", foreground="black")
-chat_history_widget.tag_config("bot_tag", foreground="#28a745", font=("Arial", 10, "bold"))
+# Define text tags with improved typography
+chat_history_widget.tag_config("user_tag", foreground="#8A8A8E", font=("Arial", 9, "bold"), spacing1=10)
+chat_history_widget.tag_config("user_message", foreground="black", spacing3=15)
+chat_history_widget.tag_config("bot_tag", foreground="#8A8A8E", font=("Arial", 9, "bold"), spacing1=10)
 chat_history_widget.tag_config("thinking", foreground="gray", font=("Arial", 10, "italic"))
 chat_history_widget.tag_config("error", foreground="red", font=("Arial", 10, "bold"))
 chat_history_widget.tag_config("status", foreground="purple", font=("Arial", 9, "italic"))
-chat_history_widget.tag_config("spanish_sentence", font=("Arial", 12), foreground="#003366", spacing3=0)
-chat_history_widget.tag_config("english_translation", font=("Arial", 9, "italic"), foreground="#444444", spacing1=0, spacing3=12, lmargin1=15, lmargin2=15)
+chat_history_widget.tag_config("spanish_sentence", font=("Arial", 14), foreground="#000000", spacing3=2)
+chat_history_widget.tag_config("english_translation", font=("Arial", 11, "italic"), foreground="#6C6C70", spacing1=0, spacing3=20, lmargin1=15, lmargin2=15)
 
-# --- Bottom Frame (Image + Input) ---
-bottom_frame = tk.Frame(main_frame)
-bottom_frame.pack(fill=tk.X, expand=False)
-image_frame = tk.LabelFrame(bottom_frame, text="Attachments (or Drag & Drop)", padx=5, pady=5)
-image_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
-image_preview = tk.Label(image_frame, text="No Image\nDrop image here", width=20, height=8, bg="lightgrey", relief="sunken")
-image_preview.pack(pady=5)
-image_preview.drop_target_register(DND_FILES)
-image_preview.dnd_bind('<<Drop>>', lambda e: handle_drop(e, image_preview))
-img_button_frame = tk.Frame(image_frame)
-img_button_frame.pack(fill=tk.X, pady=2)
-tk.Button(img_button_frame, text="Open File", command=select_file, width=8).pack(side=tk.LEFT, expand=True, padx=2)
-tk.Button(img_button_frame, text="Clear", command=clear_image, width=6).pack(side=tk.LEFT, expand=True, padx=2)
-image_indicator = tk.Label(image_frame, text="No attachments", font=("Arial", 8, "italic"), fg="grey")
-image_indicator.pack(pady=(3,0))
+# --- Input Area (Redesigned for conversation frame) ---
+# Place this inside the conversation_frame for a more integrated design
 
-input_frame = tk.LabelFrame(bottom_frame, text="Your Message (Enter to Send, Shift+Enter for Newline)", padx=10, pady=5)
-input_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-user_input_widget = scrolledtext.ScrolledText(input_frame, wrap=tk.WORD, height=4, font=("Arial", 10))
-user_input_widget.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+# Main input container with subtle styling
+input_container = tk.Frame(conversation_frame, bg="white", relief=tk.FLAT, bd=1, highlightbackground="#E5E5E5", highlightthickness=1)
+input_container.pack(fill=tk.X, side=tk.BOTTOM, pady=(10,0))
+
+# Attachment indicator strip (appears above text input when file is attached)
+attachment_strip = tk.Frame(input_container, bg="#F8F8F8", height=0)
+attachment_strip.pack(fill=tk.X, pady=(0,0))
+
+# Initially hidden attachment preview
+image_preview = tk.Label(attachment_strip, text="", bg="#F8F8F8", font=("Arial", 8), fg="grey")
+image_indicator = tk.Label(attachment_strip, text="", font=("Arial", 8, "italic"), fg="grey", bg="#F8F8F8")
+
+# Text input area with no border of its own
+user_input_widget = scrolledtext.ScrolledText(input_container, wrap=tk.WORD, height=4, font=("Arial", 12), relief=tk.FLAT, bd=0, bg="white")
+user_input_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
 user_input_widget.focus_set()
 user_input_widget.drop_target_register(DND_FILES)
 user_input_widget.dnd_bind('<<Drop>>', lambda e: handle_drop(e, user_input_widget))
-send_button = tk.Button(input_frame, text="Send", command=send_message, width=10)
+
+# Action buttons row
+action_button_frame = tk.Frame(input_container, bg="white")
+action_button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+# Attach button on the left
+attach_button = tk.Button(action_button_frame, text="📎 Attach", command=select_file, relief=tk.FLAT, 
+                         font=("Arial", 9), bg="#F0F0F0", fg="black", padx=10)
+attach_button.pack(side=tk.LEFT)
+
+# Clear attachment button (initially hidden)
+clear_attach_button = tk.Button(action_button_frame, text="✕", command=clear_image, relief=tk.FLAT,
+                               font=("Arial", 8), bg="#F0F0F0", fg="red", width=3)
+
+# Send button on the right with Apple blue styling
+send_button = tk.Button(action_button_frame, text="Send", command=send_message, relief=tk.FLAT,
+                       font=("Arial", 10, "bold"), bg="#007AFF", fg="white", padx=20, pady=5)
+send_button.pack(side=tk.RIGHT)
 send_button.pack(pady=5, anchor='e')
 
 user_input_widget.bind("<KeyPress-Return>", lambda e: "break" if not (e.state & 0x0001) and send_message() else None)
