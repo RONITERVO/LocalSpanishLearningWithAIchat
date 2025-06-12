@@ -41,6 +41,8 @@ PRE_SPEECH_BUFFER_SECONDS = 0.3 # Keep audio before speech starts
 
 # --- UI ---
 APP_TITLE = "Spanish Conversation Practice with AI"
+LISTENING_BORDER_COLOR = "#007AFF" # A nice blue for feedback
+DEFAULT_BORDER_COLOR = "#E5E5E5"   # The default border color
 
 # --- Models ---
 DEFAULT_OLLAMA_MODEL = "No model selected" 
@@ -783,6 +785,7 @@ def vad_worker():
                 if current_tts_busy:
                     if is_recording_for_whisper:
                         print("[VAD Worker] Canceling recording due to TTS activity")
+                        window.after(0, stop_visual_listening_feedback)
                         is_recording_for_whisper = False
                         audio_frames_buffer.clear()
                     if not was_tts_busy:
@@ -809,6 +812,7 @@ def vad_worker():
                         reset_user_activity_timer()
                         if not is_recording_for_whisper:
                             print("[VAD Worker] Speech started, beginning recording.")
+                            window.after(0, start_visual_listening_feedback)
                             is_recording_for_whisper = True
                             audio_frames_buffer.clear()
                             for frame_data in temp_pre_speech_buffer:
@@ -819,6 +823,7 @@ def vad_worker():
                         frames_since_last_speech += 1
                         if is_recording_for_whisper and frames_since_last_speech > silence_frame_limit:
                             print(f"[VAD Worker] Silence detected ({SILENCE_THRESHOLD_SECONDS}s), stopping recording.")
+                            window.after(0, stop_visual_listening_feedback)
                             recording_duration = len(audio_frames_buffer) * VAD_CHUNK / RATE
                             
                             if recording_duration < 0.6 + PRE_SPEECH_BUFFER_SECONDS + SILENCE_THRESHOLD_SECONDS:
@@ -1237,6 +1242,16 @@ def process_stream_queue():
 # ===================
 # UI Helpers
 # ===================
+
+def start_visual_listening_feedback():
+    """Changes the input container border to indicate active listening."""
+    if input_container:
+        input_container.config(highlightbackground=LISTENING_BORDER_COLOR, highlightcolor=LISTENING_BORDER_COLOR, highlightthickness=2)
+
+def stop_visual_listening_feedback():
+    """Resets the input container border to its default state."""
+    if input_container:
+        input_container.config(highlightbackground=DEFAULT_BORDER_COLOR, highlightcolor=DEFAULT_BORDER_COLOR, highlightthickness=1)
 
 def set_initial_window_geometry(root):
     """Calculates and sets the window size and position to fill the work area vertically."""
