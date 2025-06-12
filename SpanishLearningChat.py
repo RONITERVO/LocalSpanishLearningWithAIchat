@@ -48,8 +48,8 @@ DEFAULT_OLLAMA_MODEL = "gemma3:27b"
 DEFAULT_WHISPER_MODEL_SIZE = "turbo-large" # Faster startup, change to 'medium' or 'large' for better accuracy
 
 # --- Conversation Continuation ---
-USER_INACTIVITY_CHECK_INTERVAL = 5000   # Check every 5 seconds
-USER_INACTIVITY_THRESHOLD = 20000       # Prompt after 20 seconds of inactivity (in milliseconds)
+USER_INACTIVITY_CHECK_INTERVAL = 20000   # Check every 20 seconds
+USER_INACTIVITY_THRESHOLD = 60000       # Prompt after 60 seconds of inactivity (in milliseconds)
 
 # --- Whisper ---
 WHISPER_LANGUAGES = [
@@ -796,11 +796,15 @@ def process_audio_worker():
 
 def update_input_with_transcription(text):
     """Updates the user input text box with the transcribed text."""
-    global user_input_widget
+    global user_input_widget, auto_clear_on_new_content
     if not user_input_widget: return
 
-    current_text = user_input_widget.get("1.0", tk.END).strip()
-    user_input_widget.insert(tk.END, (" " if current_text else "") + text)
+    if auto_clear_on_new_content.get():
+        user_input_widget.delete("1.0", tk.END)
+        user_input_widget.insert(tk.END, text)
+    else:
+        current_text = user_input_widget.get("1.0", tk.END).strip()
+        user_input_widget.insert(tk.END, (" " if current_text else "") + text)
     
     if auto_send_after_transcription.get():
         window.after(100, send_message)
@@ -1255,6 +1259,7 @@ tts_rate = tk.IntVar(value=175) # Slightly slower default for language learning
 tts_voice_id = tk.StringVar(value="")
 voice_enabled = tk.BooleanVar(value=True)
 auto_send_after_transcription = tk.BooleanVar(value=True)
+auto_clear_on_new_content = tk.BooleanVar(value=False)
 selected_whisper_language = tk.StringVar()
 selected_whisper_model = tk.StringVar(value=whisper_model_size)
 
@@ -1342,6 +1347,8 @@ whisper_model_size_selector.pack(side=tk.LEFT, padx=2)
 whisper_model_size_selector.bind("<<ComboboxSelected>>", set_whisper_model_size)
 auto_send_checkbox = ttk.Checkbutton(voice_outer_frame, text="Auto-send after transcription", variable=auto_send_after_transcription)
 auto_send_checkbox.pack(anchor="w", pady=2)
+auto_clear_checkbox = ttk.Checkbutton(voice_outer_frame, text="Replace existing text with new content", variable=auto_clear_on_new_content)
+auto_clear_checkbox.pack(anchor="w", pady=2)
 recording_indicator_widget = tk.Label(voice_outer_frame, text="Voice Disabled", font=("Arial", 9, "italic"), fg="grey", anchor="w")
 recording_indicator_widget.pack(fill=tk.X, pady=(5,2), padx=2)
 
