@@ -59,7 +59,25 @@ WHISPER_LANGUAGES = [
 ]
 WHISPER_MODEL_SIZES = ["tiny", "base", "small", "medium", "large", "turbo-tiny", "turbo-base", "turbo-small", "turbo-medium", "turbo-large"]
 
+CONTINUATION_PROMPTS_FILE = "continuation_prompts.json"
+# Default continuation prompt when user is inactive
+DEFAULT_CONTINUATION_PROMPT = """When continuing the conversation, adopt a supportive teacher mindset. The student may be thinking of vocabulary or formulating their thoughts in Spanish. Proactively help them by:
+
+1. Asking a simple follow-up question related to the previous topic
+2. Offering vocabulary suggestions they might need to respond
+3. Providing sentence starters or examples they could modify
+4. Introducing a related but slightly simpler concept if they seem stuck
+5. Using encouraging phrases like "Puedes hacerlo" or "Toma tu tiempo"
+6. Breaking down complex ideas into smaller, manageable questions
+
+Be patient, encouraging, and give them tools to succeed. Remember that language learning requires thinking time, and silence may indicate the student is processing.
+
+IMPORTANT: Do not mention or acknowledge any pause in the conversation. Just continue naturally with helpful guidance.
+
+Remember to follow your primary rules: reply in Spanish with English translations."""
+
 SYSTEM_PROMPTS_FILE = "system_prompts.json"
+# Default system prompt
 DEFAULT_SYSTEM_PROMPT = """You are a friendly and patient Spanish language tutor AI. Your name is 'Maestro'.
 Your goal is to have a natural, encouraging conversation with the user to help them practice Spanish. The user may speak in English, Spanish, or a mix of both.
 
@@ -104,6 +122,14 @@ saved_system_prompts = {}
 thinking_start_index = None
 stream_buffer = ""
 is_in_think_block = False
+
+# --- Inactivity Settings ---
+inactivity_enabled = None  # BooleanVar for enabling/disabling inactivity prompts
+inactivity_threshold_seconds = None  # IntVar for threshold in seconds
+continuation_prompt = None  # StringVar for the continuation prompt text
+saved_continuation_prompts = {}
+continuation_prompt_selector = None
+prompt_text_widget = None
 
 # --- Inactivity Tracking ---
 last_user_activity_time = 0
@@ -151,6 +177,80 @@ temp_audio_file_path = None
 # Conversation Continuation
 # ===========================
 
+def load_continuation_prompts():
+    """Loads continuation prompts from the JSON file."""
+    global saved_continuation_prompts
+    try:
+        if os.path.exists(CONTINUATION_PROMPTS_FILE):
+            with open(CONTINUATION_PROMPTS_FILE, 'r') as f:
+                saved_continuation_prompts = json.load(f)
+            print(f"[Prompts] Loaded {len(saved_continuation_prompts)} continuation prompts.")
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"[Prompts] Error loading continuation prompts file: {e}")
+        saved_continuation_prompts = {}
+
+def save_continuation_prompts_to_file():
+    """Saves the current continuation prompts to the JSON file."""
+    global saved_continuation_prompts
+    try:
+        with open(CONTINUATION_PROMPTS_FILE, 'w') as f:
+            json.dump(saved_continuation_prompts, f, indent=4)
+        print("[Prompts] Continuation prompts saved to file.")
+    except IOError as e:
+        print(f"[Prompts] Error saving continuation prompts file: {e}")
+
+def populate_continuation_prompt_selector():
+    """Updates the continuation prompt dropdown with loaded prompts."""
+    if continuation_prompt_selector:
+        prompt_names = list(saved_continuation_prompts.keys())
+        continuation_prompt_selector['values'] = [""] + prompt_names
+        continuation_prompt_selector.set("")
+
+def on_continuation_prompt_selected(event=None):
+    """Handles selection from the continuation prompt dropdown."""
+    global prompt_text_widget
+    selected_name = continuation_prompt_selector.get()
+    if selected_name and selected_name in saved_continuation_prompts:
+        prompt_text = saved_continuation_prompts[selected_name]
+        continuation_prompt.set(prompt_text)
+        prompt_text_widget.delete("1.0", tk.END)
+        prompt_text_widget.insert("1.0", prompt_text)
+
+def save_current_continuation_prompt():
+    """Saves the text in the input box as a new named continuation prompt."""
+    from tkinter.simpledialog import askstring
+    global prompt_text_widget, saved_continuation_prompts
+    
+    prompt_text = prompt_text_widget.get("1.0", tk.END).strip()
+    if not prompt_text:
+        add_message_to_ui("error", "Cannot save an empty continuation prompt.")
+        return
+
+    prompt_name = askstring("Save Prompt", "Enter a name for this continuation prompt:")
+    if prompt_name:
+        saved_continuation_prompts[prompt_name] = prompt_text
+        save_continuation_prompts_to_file()
+        populate_continuation_prompt_selector()
+        continuation_prompt_selector.set(prompt_name)
+        add_message_to_ui("status", f"Continuation prompt '{prompt_name}' saved.")
+
+def delete_selected_continuation_prompt():
+    """Deletes the currently selected continuation prompt."""
+    from tkinter.messagebox import askyesno
+    global continuation_prompt_selector, prompt_text_widget
+    
+    selected_name = continuation_prompt_selector.get()
+    if not selected_name:
+        add_message_to_ui("error", "No continuation prompt selected to delete.")
+        return
+
+    if askyesno("Confirm Delete", f"Are you sure you want to delete the prompt '{selected_name}'?"):
+        if selected_name in saved_continuation_prompts:
+            del saved_continuation_prompts[selected_name]
+            save_continuation_prompts_to_file()
+            populate_continuation_prompt_selector()
+            add_message_to_ui("status", f"Continuation prompt '{selected_name}' deleted.")
+
 def reset_user_activity_timer():
     """Resets the timer tracking user's last activity."""
     global last_user_activity_time, inactivity_prompt_sent
@@ -161,8 +261,16 @@ def check_user_inactivity():
     """Checks if the user has been inactive and prompts the AI if needed."""
     global last_user_activity_time, inactivity_timer_id, inactivity_prompt_sent, stream_in_progress, messages, tts_busy, tts_busy_lock
 
+    # Skip check if inactivity prompts are disabled
+    if not inactivity_enabled.get():
+        inactivity_timer_id = window.after(USER_INACTIVITY_CHECK_INTERVAL, check_user_inactivity)
+        return
+
     current_time = time.time() * 1000
     elapsed_time = current_time - last_user_activity_time
+    
+    # Convert threshold from seconds to milliseconds for comparison
+    threshold_ms = inactivity_threshold_seconds.get() * 1000
     
     with tts_busy_lock:
         is_tts_active = tts_busy
@@ -173,15 +281,13 @@ def check_user_inactivity():
     # 3. The AI is not currently generating a response.
     # 4. There is an existing conversation to continue (messages list is not empty).
     # 5. The AI is not currently speaking.
-    if elapsed_time > USER_INACTIVITY_THRESHOLD and not inactivity_prompt_sent and not stream_in_progress and messages and not is_tts_active:
-        print("[Inactivity] User has been inactive, prompting AI to continue.")
+    if elapsed_time > threshold_ms and not inactivity_prompt_sent and not stream_in_progress and messages and not is_tts_active:
+        print(f"[Inactivity] User has been inactive for {elapsed_time/1000:.1f}s, prompting AI to continue.")
         inactivity_prompt_sent = True # Mark that we've sent the prompt
         prompt_ai_for_continuation()
 
     # Schedule the next check
     inactivity_timer_id = window.after(USER_INACTIVITY_CHECK_INTERVAL, check_user_inactivity)
-
-
 
 def prompt_ai_for_continuation():
     """Sends a special system message to the AI to continue the conversation."""
@@ -190,21 +296,15 @@ def prompt_ai_for_continuation():
     if stream_in_progress:
         return # Don't interrupt if the AI is already talking
 
-    # Define the special prompt for the AI
-    continuation_prompt = (
-        "The user has been silent for a while. To keep the conversation going, "
-        "proactively say something. You could ask a follow-up question based on the last topic, "
-        "introduce a new related idea, or ask a general question like 'What are you thinking?'. "
-        "Make it natural and encouraging. IMPORTANT: Do not mention that the user was silent. Just continue the conversation. "
-        "Remember to follow your primary rules: reply in Spanish with English translations."
-    )
+    # Use the custom continuation prompt
+    continuation_prompt_text = continuation_prompt.get()
     
     # Get the main system prompt from the UI
     system_prompt_text = system_prompt_input_widget.get("1.0", tk.END).strip()
     
     # Combine the main system prompt with our special continuation instruction for this one call
     # This special instruction is NOT saved to the main history.
-    temp_system_content = f"{system_prompt_text}\n\n[Internal Instruction]: {continuation_prompt}"
+    temp_system_content = f"{system_prompt_text}\n\n[Internal Instruction]: {continuation_prompt_text}"
 
     # Set up the stream and "Thinking..." indicator
     send_button.config(state=tk.DISABLED)
@@ -245,6 +345,114 @@ def prompt_ai_for_continuation():
 
     window.after(50, process_stream_queue)
     window.after(100, check_done)
+
+def create_inactivity_settings_ui():
+    """Create UI controls for inactivity settings"""
+    global inactivity_enabled, inactivity_threshold_seconds, continuation_prompt
+    global continuation_prompt_selector, prompt_text_widget
+    
+    # Create frame
+    inactivity_frame = tk.LabelFrame(main_frame, text="Auto-Continuation Settings", padx=5, pady=5)
+    inactivity_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
+    
+    # Top row with checkbox and threshold slider
+    top_row = tk.Frame(inactivity_frame)
+    top_row.pack(fill=tk.X, pady=(0, 5))
+    
+    # Enable/disable checkbox
+    inactivity_checkbox = ttk.Checkbutton(
+        top_row, 
+        text="Continue conversation after user inactivity", 
+        variable=inactivity_enabled,
+        command=lambda: threshold_scale.configure(state=tk.NORMAL if inactivity_enabled.get() else tk.DISABLED)
+    )
+    inactivity_checkbox.pack(side=tk.LEFT, padx=(0, 10))
+    
+    # Threshold slider
+    threshold_label = tk.Label(top_row, text="Wait time:")
+    threshold_label.pack(side=tk.LEFT)
+    
+    threshold_scale = ttk.Scale(
+        top_row,
+        from_=10,
+        to=300,
+        orient=tk.HORIZONTAL,
+        variable=inactivity_threshold_seconds,
+        command=lambda v: threshold_value.config(text=f"{int(float(v))} seconds")
+    )
+    threshold_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    threshold_scale.configure(state=tk.NORMAL if inactivity_enabled.get() else tk.DISABLED)
+    
+    threshold_value = tk.Label(top_row, text=f"{inactivity_threshold_seconds.get()} seconds", width=10)
+    threshold_value.pack(side=tk.LEFT)
+    
+    # Saved prompts dropdown row
+    prompt_dropdown_frame = tk.Frame(inactivity_frame)
+    prompt_dropdown_frame.pack(fill=tk.X, pady=(5, 0))
+    
+    tk.Label(prompt_dropdown_frame, text="Saved prompts:").pack(side=tk.LEFT, padx=(0, 5))
+    continuation_prompt_selector = ttk.Combobox(prompt_dropdown_frame, state="readonly", width=30)
+    continuation_prompt_selector.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    continuation_prompt_selector.bind("<<ComboboxSelected>>", on_continuation_prompt_selected)
+    
+    apply_button = tk.Button(prompt_dropdown_frame, text="Apply", 
+                            command=lambda: (
+                                prompt_text_widget.delete("1.0", tk.END),
+                                prompt_text_widget.insert("1.0", saved_continuation_prompts.get(continuation_prompt_selector.get(), "")),
+                                update_prompt_var()
+                            ))
+    apply_button.pack(side=tk.LEFT, padx=5)
+    
+    delete_button = tk.Button(prompt_dropdown_frame, text="Delete", 
+                             command=delete_selected_continuation_prompt)
+    delete_button.pack(side=tk.LEFT)
+    
+    # Prompt text area with description
+    tk.Label(inactivity_frame, text="Continuation Prompt (Instructions for the AI when continuing after silence):", 
+             anchor="w").pack(fill=tk.X, pady=(5, 0))
+    
+    prompt_frame = tk.Frame(inactivity_frame)
+    prompt_frame.pack(fill=tk.X, pady=(0, 5))
+    
+    prompt_text_widget = tk.Text(prompt_frame, wrap=tk.WORD, height=4, font=("Arial", 9))
+    prompt_text_widget.pack(fill=tk.X, expand=True, side=tk.LEFT)
+    prompt_text_widget.insert("1.0", continuation_prompt.get())
+    
+    # Update StringVar when text changes
+    def update_prompt_var(event=None):
+        continuation_prompt.set(prompt_text_widget.get("1.0", tk.END).strip())
+    
+    prompt_text_widget.bind("<KeyRelease>", update_prompt_var)
+    
+    # Scrollbar for the text area
+    prompt_scrollbar = ttk.Scrollbar(prompt_frame, command=prompt_text_widget.yview)
+    prompt_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    prompt_text_widget.config(yscrollcommand=prompt_scrollbar.set)
+    
+    # Bottom button row
+    bottom_buttons = tk.Frame(inactivity_frame)
+    bottom_buttons.pack(fill=tk.X, pady=(0, 5))
+    
+    save_button = tk.Button(
+        bottom_buttons,
+        text="Save As New Prompt",
+        command=save_current_continuation_prompt,
+        bg="#d0e0ff"
+    )
+    save_button.pack(side=tk.LEFT)
+    
+    reset_button = tk.Button(
+        bottom_buttons,
+        text="Reset to Default",
+        command=lambda: (
+            prompt_text_widget.delete("1.0", tk.END),
+            prompt_text_widget.insert("1.0", DEFAULT_CONTINUATION_PROMPT),
+            update_prompt_var()
+        )
+    )
+    reset_button.pack(side=tk.RIGHT)
+    
+    return inactivity_frame
 
 #============================
 #System Prompt Management
@@ -1262,6 +1470,9 @@ auto_send_after_transcription = tk.BooleanVar(value=True)
 auto_clear_on_new_content = tk.BooleanVar(value=False)
 selected_whisper_language = tk.StringVar()
 selected_whisper_model = tk.StringVar(value=whisper_model_size)
+inactivity_enabled = tk.BooleanVar(value=True)
+inactivity_threshold_seconds = tk.IntVar(value=60)  # Default 60 seconds (matches USER_INACTIVITY_THRESHOLD/1000)
+continuation_prompt = tk.StringVar(value=DEFAULT_CONTINUATION_PROMPT)
 
 # --- Main Frame ---
 main_frame = tk.Frame(window, padx=10, pady=10)
@@ -1382,10 +1593,13 @@ system_prompt_input_widget.bind("<<Modified>>", lambda e: (on_text_change(), sys
 # Buttons below the text area
 button_frame = tk.Frame(system_prompt_frame)
 button_frame.pack(fill=tk.X, expand=True)
-clear_button = tk.Button(button_frame, text="Clear Text", command=clear_system_prompt_fields)
-clear_button.pack(side=tk.LEFT, padx=(0, 5))
+clear_button = tk.Button(button_frame, text="Reset to default", command=clear_system_prompt_fields)
+clear_button.pack(side=tk.RIGHT, padx=(0, 5))
 save_button = tk.Button(button_frame, text="Save As New Prompt", command=save_current_system_prompt, bg="#d0e0ff")
 save_button.pack(side=tk.LEFT)
+
+# --- Inactivity Settings Frame ---
+inactivity_settings_frame = create_inactivity_settings_ui()
 
 # --- Chat History ---
 chat_frame = tk.LabelFrame(main_frame, text="Conversation History", padx=5, pady=5)
@@ -1435,6 +1649,8 @@ user_input_widget.bind("<KeyPress-Return>", lambda e: "break" if not (e.state & 
 window.protocol("WM_DELETE_WINDOW", on_closing)
 load_system_prompts()
 populate_system_prompt_selector()
+load_continuation_prompts()
+populate_continuation_prompt_selector()
 print("[Main] Pre-initializing TTS...")
 if initialize_tts():
     voice_selector.config(state="readonly")
