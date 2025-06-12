@@ -404,13 +404,13 @@ def create_inactivity_settings_ui():
     buttons_frame.pack(fill=tk.X, pady=(5,0))
 
     save_button = tk.Button(
-        buttons_frame, text="Save Current Text as New...", command=save_current_continuation_prompt,
+        buttons_frame, text="Save as", command=save_current_continuation_prompt,
         font=("Arial", 8, "bold"), relief=tk.FLAT, bg="#d0e0ff"
     )
     save_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
     
     delete_button = tk.Button(
-        buttons_frame, text="Delete Selected Preset", command=delete_selected_continuation_prompt,
+        buttons_frame, text="", command=delete_selected_continuation_prompt,
         font=("Arial", 8), relief=tk.FLAT
     )
     delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
@@ -1614,9 +1614,9 @@ whisper_model_size_selector.pack(fill=tk.X, pady=(2, 10))
 whisper_model_size_selector.bind("<<ComboboxSelected>>", set_whisper_model_size)
 
 # --- Options ---
-auto_send_checkbox = ttk.Checkbutton(voice_details_frame, text="Auto-send after transcription", variable=auto_send_after_transcription)
+auto_send_checkbox = ttk.Checkbutton(voice_details_frame, text="Auto-send", variable=auto_send_after_transcription)
 auto_send_checkbox.pack(anchor="w")
-auto_clear_checkbox = ttk.Checkbutton(voice_details_frame, text="Replace text with new transcription", variable=auto_clear_on_new_content)
+auto_clear_checkbox = ttk.Checkbutton(voice_details_frame, text="Auto-clear", variable=auto_clear_on_new_content)
 auto_clear_checkbox.pack(anchor="w", pady=(0, 5))
 
 # --- Status Indicator ---
@@ -1636,7 +1636,7 @@ system_prompt_details_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
 # Don't pack by default - collapsed
 
 # --- Saved Prompts Dropdown ---
-tk.Label(system_prompt_details_frame, text="Saved Prompts:", anchor="w", font=("Arial", 8), bg="#F5F5F7").pack(fill=tk.X)
+tk.Label(system_prompt_details_frame, text="Saved System Prompts:", anchor="w", font=("Arial", 8), bg="#F5F5F7").pack(fill=tk.X)
 system_prompt_selector = ttk.Combobox(system_prompt_details_frame, state="readonly", font=("Arial", 8))
 system_prompt_selector.pack(fill=tk.X, pady=2)
 system_prompt_selector.bind("<<ComboboxSelected>>", on_system_prompt_selected)
@@ -1644,9 +1644,9 @@ system_prompt_selector.bind("<<ComboboxSelected>>", on_system_prompt_selected)
 # --- Dropdown Action Buttons ---
 dropdown_actions_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
 dropdown_actions_frame.pack(fill=tk.X, pady=(2, 10))
-apply_button = tk.Button(dropdown_actions_frame, text="Apply Selected", command=apply_system_prompt, font=("Arial", 8), relief=tk.FLAT)
+apply_button = tk.Button(dropdown_actions_frame, text="Apply", command=apply_system_prompt, font=("Arial", 8), relief=tk.FLAT)
 apply_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
-delete_button = tk.Button(dropdown_actions_frame, text="Delete Selected", command=delete_selected_system_prompt, font=("Arial", 8), relief=tk.FLAT)
+delete_button = tk.Button(dropdown_actions_frame, text="Delete", command=delete_selected_system_prompt, font=("Arial", 8), relief=tk.FLAT)
 delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
 
 # --- Prompt Editor ---
@@ -1662,9 +1662,9 @@ system_prompt_input_widget.bind("<<Modified>>", lambda e: (on_text_change(), sys
 # --- Editor Action Buttons ---
 editor_actions_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
 editor_actions_frame.pack(fill=tk.X, pady=(5,0))
-save_button = tk.Button(editor_actions_frame, text="Save Current Text as New...", command=save_current_system_prompt, font=("Arial", 8, "bold"), relief=tk.FLAT, bg="#d0e0ff")
+save_button = tk.Button(editor_actions_frame, text="Save as", command=save_current_system_prompt, font=("Arial", 8, "bold"), relief=tk.FLAT, bg="#d0e0ff")
 save_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
-clear_button = tk.Button(editor_actions_frame, text="Reset to Default", command=clear_system_prompt_fields, font=("Arial", 8), relief=tk.FLAT)
+clear_button = tk.Button(editor_actions_frame, text="Reset-default", command=clear_system_prompt_fields, font=("Arial", 8), relief=tk.FLAT)
 clear_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
 
 # --- Inactivity Settings Frame ---
