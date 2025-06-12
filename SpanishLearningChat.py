@@ -349,116 +349,72 @@ def create_inactivity_settings_ui():
     """Create UI controls for inactivity settings"""
     global inactivity_enabled, inactivity_threshold_seconds, continuation_prompt
     global continuation_prompt_selector, prompt_text_widget
-    
-    # Create collapsible header button
+
+    # Main collapsible frame
     inactivity_header_button = ttk.Button(
         controls_sidebar_frame,
         text="Auto-Continuation ▸",
         command=lambda: toggle_frame(inactivity_frame, inactivity_header_button)
     )
     inactivity_header_button.pack(fill=tk.X, pady=(0, 5))
-    
-    # Create frame
     inactivity_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
-    # Don't pack by default - collapsed
     
-    # Top row with checkbox and threshold slider
-    top_row = tk.Frame(inactivity_frame, bg="#F5F5F7")
-    top_row.pack(fill=tk.X, pady=(0, 5))
-    
-    # Enable/disable checkbox
+    # --- Enable Checkbox ---
     inactivity_checkbox = ttk.Checkbutton(
-        top_row, 
-        text="Continue conversation after user inactivity", 
+        inactivity_frame, 
+        text="Continue after user inactivity", 
         variable=inactivity_enabled,
         command=lambda: threshold_scale.configure(state=tk.NORMAL if inactivity_enabled.get() else tk.DISABLED)
     )
-    inactivity_checkbox.pack(side=tk.LEFT, padx=(0, 10))
-    
-    # Threshold slider
-    threshold_label = tk.Label(top_row, text="Wait time:", bg="#F5F5F7")
-    threshold_label.pack(side=tk.LEFT)
-    
+    inactivity_checkbox.pack(anchor="w", pady=(0, 10))
+
+    # --- Threshold Slider ---
+    threshold_value = tk.StringVar(value=f"{inactivity_threshold_seconds.get()} seconds")
+    threshold_title_frame = tk.Frame(inactivity_frame, bg="#F5F5F7")
+    threshold_title_frame.pack(fill=tk.X)
+    tk.Label(threshold_title_frame, text="Wait Time:", bg="#F5F5F7", font=("Arial", 8)).pack(side=tk.LEFT)
+    tk.Label(threshold_title_frame, textvariable=threshold_value, bg="#F5F5F7", font=("Arial", 8)).pack(side=tk.RIGHT)
+
     threshold_scale = ttk.Scale(
-        top_row,
-        from_=10,
-        to=300,
-        orient=tk.HORIZONTAL,
-        variable=inactivity_threshold_seconds,
-        command=lambda v: threshold_value.config(text=f"{int(float(v))} seconds")
+        inactivity_frame,
+        from_=10, to=300, orient=tk.HORIZONTAL, variable=inactivity_threshold_seconds,
+        command=lambda v: threshold_value.set(f"{int(float(v))} seconds")
     )
-    threshold_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    threshold_scale.pack(fill=tk.X, pady=(2, 10))
     threshold_scale.configure(state=tk.NORMAL if inactivity_enabled.get() else tk.DISABLED)
-    
-    threshold_value = tk.Label(top_row, text=f"{inactivity_threshold_seconds.get()} seconds", width=10, bg="#F5F5F7")
-    threshold_value.pack(side=tk.LEFT)
-    
-    # Saved prompts dropdown row
-    prompt_dropdown_frame = tk.Frame(inactivity_frame, bg="#F5F5F7")
-    prompt_dropdown_frame.pack(fill=tk.X, pady=(5, 0))
-    
-    tk.Label(prompt_dropdown_frame, text="Saved prompts:", bg="#F5F5F7").pack(side=tk.LEFT, padx=(0, 5))
-    continuation_prompt_selector = ttk.Combobox(prompt_dropdown_frame, state="readonly", width=30)
-    continuation_prompt_selector.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+    # --- Saved Prompts ---
+    tk.Label(inactivity_frame, text="Continuation Instruction Preset:", bg="#F5F5F7", font=("Arial", 8), anchor="w").pack(fill=tk.X)
+    continuation_prompt_selector = ttk.Combobox(inactivity_frame, state="readonly", font=("Arial", 8))
+    continuation_prompt_selector.pack(fill=tk.X, pady=2)
     continuation_prompt_selector.bind("<<ComboboxSelected>>", on_continuation_prompt_selected)
     
-    apply_button = tk.Button(prompt_dropdown_frame, text="Apply", 
-                            command=lambda: (
-                                prompt_text_widget.delete("1.0", tk.END),
-                                prompt_text_widget.insert("1.0", saved_continuation_prompts.get(continuation_prompt_selector.get(), "")),
-                                update_prompt_var()
-                            ))
-    apply_button.pack(side=tk.LEFT, padx=5)
-    
-    delete_button = tk.Button(prompt_dropdown_frame, text="Delete", 
-                             command=delete_selected_continuation_prompt)
-    delete_button.pack(side=tk.LEFT)
-    
-    # Prompt text area with description
-    tk.Label(inactivity_frame, text="Continuation Prompt (Instructions for the AI when continuing after silence):", 
-             anchor="w", bg="#F5F5F7").pack(fill=tk.X, pady=(5, 0))
-    
-    prompt_frame = tk.Frame(inactivity_frame, bg="#F5F5F7")
-    prompt_frame.pack(fill=tk.X, pady=(0, 5))
-    
-    prompt_text_widget = tk.Text(prompt_frame, wrap=tk.WORD, height=4, font=("Arial", 9))
-    prompt_text_widget.pack(fill=tk.X, expand=True, side=tk.LEFT)
+    # --- Prompt Text Area ---
+    tk.Label(inactivity_frame, text="AI Instructions:", anchor="w", bg="#F5F5F7", font=("Arial", 8)).pack(fill=tk.X, pady=(10, 0))
+    prompt_text_widget = scrolledtext.ScrolledText(inactivity_frame, wrap=tk.WORD, height=5, font=("Arial", 9))
+    prompt_text_widget.pack(fill=tk.X, pady=2)
     prompt_text_widget.insert("1.0", continuation_prompt.get())
     
-    # Update StringVar when text changes
     def update_prompt_var(event=None):
         continuation_prompt.set(prompt_text_widget.get("1.0", tk.END).strip())
-    
     prompt_text_widget.bind("<KeyRelease>", update_prompt_var)
     
-    # Scrollbar for the text area
-    prompt_scrollbar = ttk.Scrollbar(prompt_frame, command=prompt_text_widget.yview)
-    prompt_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    prompt_text_widget.config(yscrollcommand=prompt_scrollbar.set)
-    
-    # Bottom button row
-    bottom_buttons = tk.Frame(inactivity_frame, bg="#F5F5F7")
-    bottom_buttons.pack(fill=tk.X, pady=(0, 5))
-    
+    # --- Action Buttons ---
+    buttons_frame = tk.Frame(inactivity_frame, bg="#F5F5F7")
+    buttons_frame.pack(fill=tk.X, pady=(5,0))
+
     save_button = tk.Button(
-        bottom_buttons,
-        text="Save As New Prompt",
-        command=save_current_continuation_prompt,
-        bg="#d0e0ff"
+        buttons_frame, text="Save Current Text as New...", command=save_current_continuation_prompt,
+        font=("Arial", 8, "bold"), relief=tk.FLAT, bg="#d0e0ff"
     )
-    save_button.pack(side=tk.LEFT)
+    save_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
     
-    reset_button = tk.Button(
-        bottom_buttons,
-        text="Reset to Default",
-        command=lambda: (
-            prompt_text_widget.delete("1.0", tk.END),
-            prompt_text_widget.insert("1.0", DEFAULT_CONTINUATION_PROMPT),
-            update_prompt_var()
-        )
+    delete_button = tk.Button(
+        buttons_frame, text="Delete Selected Preset", command=delete_selected_continuation_prompt,
+        font=("Arial", 8), relief=tk.FLAT
     )
-    reset_button.pack(side=tk.RIGHT)
-    
+    delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
+
     return inactivity_frame
 
 #============================
@@ -1573,17 +1529,18 @@ model_selector_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
 model_selector_frame.pack(fill=tk.X, expand=False, pady=(0, 15))
 
 available_models = fetch_available_models()
-model_selector = ttk.Combobox(model_selector_frame, values=available_models, state="readonly", width=25)
+model_selector = ttk.Combobox(model_selector_frame, values=available_models, state="readonly")
 if available_models:
     model_to_set = next((m for m in [current_model, DEFAULT_OLLAMA_MODEL] if m in available_models), available_models[0])
     model_selector.set(model_to_set)
     current_model = model_to_set
 else:
     model_selector.set("No models found"); model_selector.config(state=tk.DISABLED); current_model = None
-model_selector.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,5))
+model_selector.pack(fill=tk.X, expand=True, pady=(0,2))
 model_selector.bind("<<ComboboxSelected>>", select_model)
-model_status = tk.Label(model_selector_frame, text=f"Using: {current_model.split(':')[0] if current_model else 'N/A'}", font=("Arial", 8), width=15, anchor="w", bg="#F5F5F7")
-model_status.pack(side=tk.LEFT)
+
+model_status = tk.Label(model_selector_frame, text=f"Using: {current_model.split(':')[0] if current_model else 'N/A'}", font=("Arial", 8), anchor="w", bg="#F5F5F7")
+model_status.pack(fill=tk.X)
 
 # --- TTS Controls (Collapsible) ---
 tts_header_button = ttk.Button(
@@ -1597,14 +1554,13 @@ tts_details_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
 # Don't pack by default - collapsed
 
 tts_toggle_button = ttk.Checkbutton(tts_details_frame, text="Enable TTS", variable=tts_enabled, command=toggle_tts)
-tts_toggle_button.pack(anchor="w", pady=2)
+tts_toggle_button.pack(anchor="w", pady=(0, 10))
 
-voice_frame = tk.Frame(tts_details_frame, bg="#F5F5F7")
-voice_frame.pack(fill=tk.X, pady=2)
-tk.Label(voice_frame, text="Voice:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
+# --- Voice Selector ---
+tk.Label(tts_details_frame, text="Voice:", font=("Arial", 8), bg="#F5F5F7", anchor="w").pack(fill=tk.X)
 available_voices = get_available_voices()
 voice_names = [v[0] for v in available_voices]
-voice_selector = ttk.Combobox(voice_frame, values=voice_names, state="disabled", width=18, font=("Arial", 8))
+voice_selector = ttk.Combobox(tts_details_frame, values=voice_names, state="disabled", font=("Arial", 8))
 if available_voices:
     default_voice_index = 0
     spanish_keywords = ["spanish", "español", "sabina", "helena", "jorge", "elena"]
@@ -1618,14 +1574,17 @@ if available_voices:
     voice_selector.current(default_voice_index)
     tts_voice_id.set(available_voices[default_voice_index][1])
     voice_selector.bind("<<ComboboxSelected>>", set_voice)
-voice_selector.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+voice_selector.pack(fill=tk.X, pady=(2, 10))
 
-rate_frame = tk.Frame(tts_details_frame, bg="#F5F5F7")
-rate_frame.pack(fill=tk.X, pady=2)
-tk.Label(rate_frame, text="Talking speed:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
-rate_scale = ttk.Scale(rate_frame, from_=80, to=300, orient=tk.HORIZONTAL, variable=tts_rate, command=set_speech_rate, state="disabled")
-rate_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-tk.Label(rate_frame, textvariable=tts_rate, width=3, font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
+# --- Rate Slider ---
+rate_title_frame = tk.Frame(tts_details_frame, bg="#F5F5F7")
+rate_title_frame.pack(fill=tk.X)
+tk.Label(rate_title_frame, text="Talking speed:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
+tk.Label(rate_title_frame, textvariable=tts_rate, font=("Arial", 8), bg="#F5F5F7").pack(side=tk.RIGHT)
+
+rate_scale = ttk.Scale(tts_details_frame, from_=80, to=300, orient=tk.HORIZONTAL, variable=tts_rate, command=set_speech_rate, state="disabled")
+rate_scale.pack(fill=tk.X, pady=(2, 5))
+
 
 # --- Voice Recognition Controls (Collapsible) ---
 voice_header_button = ttk.Button(
@@ -1639,29 +1598,31 @@ voice_details_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
 # Don't pack by default - collapsed
 
 voice_toggle_button = ttk.Checkbutton(voice_details_frame, text="Enable Voice", variable=voice_enabled, command=toggle_voice_recognition)
-voice_toggle_button.pack(anchor="w", pady=2)
+voice_toggle_button.pack(anchor="w", pady=(0, 10))
 
-whisper_settings_frame = tk.Frame(voice_details_frame, bg="#F5F5F7")
-whisper_settings_frame.pack(fill=tk.X, pady=2)
-lang_frame = tk.Frame(whisper_settings_frame, bg="#F5F5F7")
-lang_frame.pack(fill=tk.X)
-tk.Label(lang_frame, text="Lang:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
-whisper_language_selector = ttk.Combobox(lang_frame, values=[lang[0] for lang in WHISPER_LANGUAGES], state="readonly", width=10, font=("Arial", 8), textvariable=selected_whisper_language)
+# --- Language Selector ---
+tk.Label(voice_details_frame, text="Spoken Language:", font=("Arial", 8), bg="#F5F5F7", anchor="w").pack(fill=tk.X)
+whisper_language_selector = ttk.Combobox(voice_details_frame, values=[lang[0] for lang in WHISPER_LANGUAGES], state="readonly", font=("Arial", 8), textvariable=selected_whisper_language)
 whisper_language_selector.current(0) # Default to Auto Detect
-whisper_language_selector.pack(side=tk.LEFT, padx=2)
+whisper_language_selector.pack(fill=tk.X, pady=(2, 10))
 whisper_language_selector.bind("<<ComboboxSelected>>", set_whisper_language)
-size_frame = tk.Frame(whisper_settings_frame, bg="#F5F5F7")
-size_frame.pack(fill=tk.X, pady=(2,0))
-tk.Label(size_frame, text="Model:", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT)
-whisper_model_size_selector = ttk.Combobox(size_frame, values=WHISPER_MODEL_SIZES, state="readonly", width=10, font=("Arial", 8), textvariable=selected_whisper_model)
-whisper_model_size_selector.pack(side=tk.LEFT, padx=2)
+
+# --- Model Size Selector ---
+tk.Label(voice_details_frame, text="Whisper Model Size:", font=("Arial", 8), bg="#F5F5F7", anchor="w").pack(fill=tk.X)
+whisper_model_size_selector = ttk.Combobox(voice_details_frame, values=WHISPER_MODEL_SIZES, state="readonly", font=("Arial", 8), textvariable=selected_whisper_model)
+whisper_model_size_selector.pack(fill=tk.X, pady=(2, 10))
 whisper_model_size_selector.bind("<<ComboboxSelected>>", set_whisper_model_size)
+
+# --- Options ---
 auto_send_checkbox = ttk.Checkbutton(voice_details_frame, text="Auto-send after transcription", variable=auto_send_after_transcription)
-auto_send_checkbox.pack(anchor="w", pady=2)
-auto_clear_checkbox = ttk.Checkbutton(voice_details_frame, text="Replace existing text with new content", variable=auto_clear_on_new_content)
-auto_clear_checkbox.pack(anchor="w", pady=2)
+auto_send_checkbox.pack(anchor="w")
+auto_clear_checkbox = ttk.Checkbutton(voice_details_frame, text="Replace text with new transcription", variable=auto_clear_on_new_content)
+auto_clear_checkbox.pack(anchor="w", pady=(0, 5))
+
+# --- Status Indicator ---
 recording_indicator_widget = tk.Label(voice_details_frame, text="Voice Disabled", font=("Arial", 9, "italic"), fg="grey", anchor="w", bg="#F5F5F7")
-recording_indicator_widget.pack(fill=tk.X, pady=(5,2), padx=2)
+recording_indicator_widget.pack(fill=tk.X, pady=(5,0))
+
 
 # --- System Prompt Frame (Collapsible) ---
 system_prompt_header_button = ttk.Button(
@@ -1674,36 +1635,37 @@ system_prompt_header_button.pack(fill=tk.X, pady=(0, 5))
 system_prompt_details_frame = tk.Frame(controls_sidebar_frame, bg="#F5F5F7")
 # Don't pack by default - collapsed
 
-# Dropdown row with Apply and Delete buttons side-by-side
-dropdown_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
-dropdown_frame.pack(fill=tk.X, expand=True, pady=(0, 5))
-tk.Label(dropdown_frame, text="Saved prompts:", anchor="w", font=("Arial", 8), bg="#F5F5F7").pack(side=tk.LEFT, padx=(0, 5))
-system_prompt_selector = ttk.Combobox(dropdown_frame, state="readonly", width=25, font=("Arial", 8))
-system_prompt_selector.pack(side=tk.LEFT, fill=tk.X, expand=True)
+# --- Saved Prompts Dropdown ---
+tk.Label(system_prompt_details_frame, text="Saved Prompts:", anchor="w", font=("Arial", 8), bg="#F5F5F7").pack(fill=tk.X)
+system_prompt_selector = ttk.Combobox(system_prompt_details_frame, state="readonly", font=("Arial", 8))
+system_prompt_selector.pack(fill=tk.X, pady=2)
 system_prompt_selector.bind("<<ComboboxSelected>>", on_system_prompt_selected)
-apply_button = tk.Button(dropdown_frame, text="Apply", command=apply_system_prompt, font=("Arial", 8), relief=tk.FLAT)
-apply_button.pack(side=tk.LEFT, padx=5)
-delete_button = tk.Button(dropdown_frame, text="Delete", command=delete_selected_system_prompt, font=("Arial", 8), relief=tk.FLAT)
-delete_button.pack(side=tk.LEFT)
 
-# Status indicator for the prompt
-prompt_status = tk.Label(system_prompt_details_frame, text="Edit prompt below, then Apply to activate or Save to store", 
-                         font=("Arial", 7, "italic"), anchor="w", fg="gray", bg="#F5F5F7")
-prompt_status.pack(fill=tk.X, pady=(0, 2))
+# --- Dropdown Action Buttons ---
+dropdown_actions_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
+dropdown_actions_frame.pack(fill=tk.X, pady=(2, 10))
+apply_button = tk.Button(dropdown_actions_frame, text="Apply Selected", command=apply_system_prompt, font=("Arial", 8), relief=tk.FLAT)
+apply_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
+delete_button = tk.Button(dropdown_actions_frame, text="Delete Selected", command=delete_selected_system_prompt, font=("Arial", 8), relief=tk.FLAT)
+delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
 
-# Text area for prompt editing
-system_prompt_input_widget = scrolledtext.ScrolledText(system_prompt_details_frame, wrap=tk.WORD, height=6, font=("Arial", 8))
-system_prompt_input_widget.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+# --- Prompt Editor ---
+prompt_status = tk.Label(system_prompt_details_frame, text="Active: Default system prompt", 
+                         font=("Arial", 8, "italic"), anchor="w", fg="green", bg="#F5F5F7")
+prompt_status.pack(fill=tk.X)
+
+system_prompt_input_widget = scrolledtext.ScrolledText(system_prompt_details_frame, wrap=tk.WORD, height=6, font=("Arial", 9))
+system_prompt_input_widget.pack(fill=tk.BOTH, expand=True, pady=2)
 system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
 system_prompt_input_widget.bind("<<Modified>>", lambda e: (on_text_change(), system_prompt_input_widget.edit_modified(False)))
 
-# Buttons below the text area
-button_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
-button_frame.pack(fill=tk.X, expand=True)
-clear_button = tk.Button(button_frame, text="Reset", command=clear_system_prompt_fields, font=("Arial", 8), relief=tk.FLAT)
-clear_button.pack(side=tk.RIGHT, padx=(0, 5))
-save_button = tk.Button(button_frame, text="Save As New", command=save_current_system_prompt, font=("Arial", 8), relief=tk.FLAT, bg="#d0e0ff")
-save_button.pack(side=tk.LEFT)
+# --- Editor Action Buttons ---
+editor_actions_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
+editor_actions_frame.pack(fill=tk.X, pady=(5,0))
+save_button = tk.Button(editor_actions_frame, text="Save Current Text as New...", command=save_current_system_prompt, font=("Arial", 8, "bold"), relief=tk.FLAT, bg="#d0e0ff")
+save_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
+clear_button = tk.Button(editor_actions_frame, text="Reset to Default", command=clear_system_prompt_fields, font=("Arial", 8), relief=tk.FLAT)
+clear_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
 
 # --- Inactivity Settings Frame ---
 inactivity_settings_frame = create_inactivity_settings_ui()
