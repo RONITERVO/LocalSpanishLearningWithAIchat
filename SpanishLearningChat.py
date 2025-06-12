@@ -177,16 +177,22 @@ temp_audio_file_path = None
 # ===========================
 
 def load_continuation_prompts():
-    """Loads continuation prompts from the JSON file."""
+    """Loads continuation prompts from the JSON file and ensures 'Default' exists."""
     global saved_continuation_prompts
     try:
         if os.path.exists(CONTINUATION_PROMPTS_FILE):
             with open(CONTINUATION_PROMPTS_FILE, 'r') as f:
                 saved_continuation_prompts = json.load(f)
-            print(f"[Prompts] Loaded {len(saved_continuation_prompts)} continuation prompts.")
+        else:
+            saved_continuation_prompts = {}
     except (json.JSONDecodeError, IOError) as e:
         print(f"[Prompts] Error loading continuation prompts file: {e}")
         saved_continuation_prompts = {}
+
+    if "Default" not in saved_continuation_prompts:
+        print("[Prompts] 'Default' continuation prompt not found. Creating it.")
+        saved_continuation_prompts["Default"] = DEFAULT_CONTINUATION_PROMPT
+        save_continuation_prompts_to_file()
 
 def save_continuation_prompts_to_file():
     """Saves the current continuation prompts to the JSON file."""
@@ -201,9 +207,9 @@ def save_continuation_prompts_to_file():
 def populate_continuation_prompt_selector():
     """Updates the continuation prompt dropdown with loaded prompts."""
     if continuation_prompt_selector:
-        prompt_names = list(saved_continuation_prompts.keys())
-        continuation_prompt_selector['values'] = [""] + prompt_names
-        continuation_prompt_selector.set("")
+        prompt_names = ["Default"] + [name for name in saved_continuation_prompts if name != "Default"]
+        continuation_prompt_selector['values'] = prompt_names
+        continuation_prompt_selector.set("Default")
 
 def on_continuation_prompt_selected(event=None):
     """Handles selection from the continuation prompt dropdown."""
@@ -410,7 +416,7 @@ def create_inactivity_settings_ui():
     save_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
     
     delete_button = tk.Button(
-        buttons_frame, text="", command=delete_selected_continuation_prompt,
+        buttons_frame, text="Delete", command=delete_selected_continuation_prompt,
         font=("Arial", 8), relief=tk.FLAT
     )
     delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
@@ -422,16 +428,22 @@ def create_inactivity_settings_ui():
 #============================
 
 def load_system_prompts():
-    """Loads system prompts from the JSON file."""
+    """Loads system prompts from the JSON file and ensures 'Default' exists."""
     global saved_system_prompts
     try:
         if os.path.exists(SYSTEM_PROMPTS_FILE):
             with open(SYSTEM_PROMPTS_FILE, 'r') as f:
                 saved_system_prompts = json.load(f)
-            print(f"[Prompts] Loaded {len(saved_system_prompts)} system prompts.")
+        else:
+            saved_system_prompts = {}
     except (json.JSONDecodeError, IOError) as e:
         print(f"[Prompts] Error loading system prompts file: {e}")
         saved_system_prompts = {}
+
+    if "Default" not in saved_system_prompts:
+        print("[Prompts] 'Default' system prompt not found. Creating it.")
+        saved_system_prompts["Default"] = DEFAULT_SYSTEM_PROMPT
+        save_system_prompts_to_file()
 
 def save_system_prompts_to_file():
     """Saves the current system prompts to the JSON file."""
@@ -446,9 +458,9 @@ def save_system_prompts_to_file():
 def populate_system_prompt_selector():
     """Updates the system prompt dropdown with loaded prompts."""
     if system_prompt_selector:
-        prompt_names = list(saved_system_prompts.keys())
-        system_prompt_selector['values'] = [""] + prompt_names
-        system_prompt_selector.set("")
+        prompt_names = ["Default"] + [name for name in saved_system_prompts if name != "Default"]
+        system_prompt_selector['values'] = prompt_names
+        system_prompt_selector.set("Default")
 
 def on_system_prompt_selected(event=None):
     """Handles selection from the system prompt dropdown."""
@@ -490,66 +502,6 @@ def delete_selected_system_prompt():
             populate_system_prompt_selector()
             system_prompt_input_widget.delete("1.0", tk.END)
             add_message_to_ui("status", f"System prompt '{selected_name}' deleted.")
-
-def clear_system_prompt_fields():
-    """Clears the system prompt input and selection."""
-    system_prompt_selector.set("")
-    system_prompt_input_widget.delete("1.0", tk.END)
-    system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
-
-
-def apply_system_prompt():
-    """
-    Handles the 'Apply' button click for system prompts.
-    It prioritizes activating the prompt selected in the dropdown.
-    - If a valid prompt is selected in the dropdown, its text is loaded/reloaded into the input widget and confirmed as active.
-    - If no specific prompt is selected in the dropdown (e.g., blank option) BUT the text box has content, that custom text is confirmed as active.
-    - If both the dropdown selection is blank/invalid and the text box is empty, the DEFAULT_SYSTEM_PROMPT is loaded and confirmed as active.
-    The system prompt actually used by the AI is always what's in system_prompt_input_widget when a message is sent.
-    """
-    global system_prompt_selector, system_prompt_input_widget, saved_system_prompts, DEFAULT_SYSTEM_PROMPT
-    
-    selected_name_in_dropdown = system_prompt_selector.get()
-    current_text_in_input_widget = system_prompt_input_widget.get("1.0", tk.END).strip()
-
-    if selected_name_in_dropdown and selected_name_in_dropdown in saved_system_prompts:
-        # A specific, named prompt is selected in the dropdown. This takes precedence.
-        prompt_text_from_dropdown = saved_system_prompts[selected_name_in_dropdown]
-        if current_text_in_input_widget != prompt_text_from_dropdown:
-            system_prompt_input_widget.delete("1.0", tk.END)
-            system_prompt_input_widget.insert("1.0", prompt_text_from_dropdown)
-            add_message_to_ui("status", f"System prompt '{selected_name_in_dropdown}' from dropdown has been reloaded and is now active.")
-            prompt_status.config(text=f"Active: '{selected_name_in_dropdown}'", fg="green")
-        else:
-            add_message_to_ui("status", f"System prompt '{selected_name_in_dropdown}' from dropdown is active.")
-            prompt_status.config(text=f"Active: '{selected_name_in_dropdown}'", fg="green")
-    elif current_text_in_input_widget:
-        # No valid/specific prompt selected in dropdown (it's "" or invalid), but the text box has content.
-        add_message_to_ui("status", "Custom system prompt from text input is active.")
-        prompt_status.config(text="Active: Custom unsaved prompt", fg="green")
-    else:
-        # No specific prompt in dropdown AND text input is empty.
-        # This typically happens if the user selected the blank option in the dropdown (which clears the text box).
-        # In this case, load and activate the DEFAULT_SYSTEM_PROMPT.
-        system_prompt_input_widget.delete("1.0", tk.END)
-        system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
-        add_message_to_ui("status", "Default system prompt has been loaded and is now active.")
-        prompt_status.config(text="Active: Default system prompt", fg="green")
-
-
-
-def on_text_change(event=None):
-    """Indicate when the text has been modified but not applied"""
-    current_selection = system_prompt_selector.get()
-    if current_selection:
-        original = saved_system_prompts.get(current_selection, "")
-        current = system_prompt_input_widget.get("1.0", "end-1c")
-        if original != current:
-            prompt_status.config(text=f"Modified: '{current_selection}' (not applied)", fg="orange")
-        else:
-            prompt_status.config(text=f"Active: '{current_selection}'", fg="green")
-    else:
-        prompt_status.config(text="Custom prompt (not applied)", fg="orange")
 
 # ===================
 # TTS Setup & Control
@@ -1644,28 +1596,26 @@ system_prompt_selector.bind("<<ComboboxSelected>>", on_system_prompt_selected)
 # --- Dropdown Action Buttons ---
 dropdown_actions_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
 dropdown_actions_frame.pack(fill=tk.X, pady=(2, 10))
-apply_button = tk.Button(dropdown_actions_frame, text="Apply", command=apply_system_prompt, font=("Arial", 8), relief=tk.FLAT)
-apply_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
-delete_button = tk.Button(dropdown_actions_frame, text="Delete", command=delete_selected_system_prompt, font=("Arial", 8), relief=tk.FLAT)
-delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
 
 # --- Prompt Editor ---
-prompt_status = tk.Label(system_prompt_details_frame, text="Active: Default system prompt", 
-                         font=("Arial", 8, "italic"), anchor="w", fg="green", bg="#F5F5F7")
-prompt_status.pack(fill=tk.X)
-
 system_prompt_input_widget = scrolledtext.ScrolledText(system_prompt_details_frame, wrap=tk.WORD, height=6, font=("Arial", 9))
 system_prompt_input_widget.pack(fill=tk.BOTH, expand=True, pady=2)
-system_prompt_input_widget.insert("1.0", DEFAULT_SYSTEM_PROMPT)
-system_prompt_input_widget.bind("<<Modified>>", lambda e: (on_text_change(), system_prompt_input_widget.edit_modified(False)))
 
-# --- Editor Action Buttons ---
-editor_actions_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
-editor_actions_frame.pack(fill=tk.X, pady=(5,0))
-save_button = tk.Button(editor_actions_frame, text="Save as", command=save_current_system_prompt, font=("Arial", 8, "bold"), relief=tk.FLAT, bg="#d0e0ff")
+# --- Action Buttons ---
+buttons_frame = tk.Frame(system_prompt_details_frame, bg="#F5F5F7")
+buttons_frame.pack(fill=tk.X, pady=(5,0))
+
+save_button = tk.Button(
+    buttons_frame, text="Save as", command=save_current_system_prompt,
+    font=("Arial", 8, "bold"), relief=tk.FLAT, bg="#d0e0ff"
+)
 save_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
-clear_button = tk.Button(editor_actions_frame, text="Reset-default", command=clear_system_prompt_fields, font=("Arial", 8), relief=tk.FLAT)
-clear_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
+
+delete_button = tk.Button(
+    buttons_frame, text="Delete", command=delete_selected_system_prompt,
+    font=("Arial", 8), relief=tk.FLAT
+)
+delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
 
 # --- Inactivity Settings Frame ---
 inactivity_settings_frame = create_inactivity_settings_ui()
@@ -1729,10 +1679,16 @@ user_input_widget.bind("<KeyPress-Return>", lambda e: "break" if not (e.state & 
 
 # --- Final Setup and Initialization ---
 window.protocol("WM_DELETE_WINDOW", on_closing)
+
+# Load, populate, and set initial state for prompts
 load_system_prompts()
 populate_system_prompt_selector()
+on_system_prompt_selected() # Load default text
+
 load_continuation_prompts()
 populate_continuation_prompt_selector()
+on_continuation_prompt_selected() # Load default text
+
 print("[Main] Pre-initializing TTS...")
 if initialize_tts():
     voice_selector.config(state="readonly")
