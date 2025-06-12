@@ -368,7 +368,7 @@ def create_inactivity_settings_ui():
     # --- Enable Checkbox ---
     inactivity_checkbox = ttk.Checkbutton(
         inactivity_frame, 
-        text="Continue after user inactivity", 
+        text="Always talking", 
         variable=inactivity_enabled,
         command=lambda: threshold_scale.configure(state=tk.NORMAL if inactivity_enabled.get() else tk.DISABLED)
     )
@@ -1555,7 +1555,7 @@ voice_toggle_button.pack(anchor="w", pady=(0, 10))
 # --- Language Selector ---
 tk.Label(voice_details_frame, text="Spoken Language:", font=("Arial", 8), bg="#F5F5F7", anchor="w").pack(fill=tk.X)
 whisper_language_selector = ttk.Combobox(voice_details_frame, values=[lang[0] for lang in WHISPER_LANGUAGES], state="readonly", font=("Arial", 8), textvariable=selected_whisper_language)
-whisper_language_selector.current(0) # Default to Auto Detect
+whisper_language_selector.current(2) # Default to Spanish
 whisper_language_selector.pack(fill=tk.X, pady=(2, 10))
 whisper_language_selector.bind("<<ComboboxSelected>>", set_whisper_language)
 
