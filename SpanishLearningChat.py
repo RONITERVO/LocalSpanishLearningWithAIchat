@@ -41,10 +41,9 @@ PRE_SPEECH_BUFFER_SECONDS = 0.3 # Keep audio before speech starts
 
 # --- UI ---
 APP_TITLE = "Spanish Conversation Practice with AI"
-WINDOW_GEOMETRY = "850x850"
 
 # --- Models ---
-DEFAULT_OLLAMA_MODEL = "gemma3:27b"
+DEFAULT_OLLAMA_MODEL = "No model selected" 
 DEFAULT_WHISPER_MODEL_SIZE = "turbo-large" # Faster startup, change to 'medium' or 'large' for better accuracy
 
 # --- Conversation Continuation ---
@@ -1172,10 +1171,10 @@ def fetch_available_models():
         elif isinstance(models_data, dict) and 'models' in models_data: # Old format
             for model in models_data.get('models', []):
                 if isinstance(model, dict) and 'name' in model: valid_models.append(model['name'])
-        return valid_models if valid_models else [DEFAULT_OLLAMA_MODEL, "llama3:8b"]
+        return valid_models if valid_models else [DEFAULT_OLLAMA_MODEL, "None"]
     except Exception as e:
         print(f"[Ollama] Error fetching models: {e}")
-        return [DEFAULT_OLLAMA_MODEL, "llama3:8b"]
+        return [DEFAULT_OLLAMA_MODEL, "None"]
 
 def chat_worker(user_message_content, system_prompt_content, image_path=None):
     """Background worker for Ollama streaming chat."""
@@ -1318,6 +1317,39 @@ def process_stream_queue():
 # ===================
 # UI Helpers
 # ===================
+
+def set_initial_window_geometry(root):
+    """Calculates and sets the window size and position to fill the work area vertically."""
+    window_width = 1000  # Keep the original width
+
+    # Use a temporary Toplevel window to find the work area
+    # This is a common method to get the screen size without the taskbar
+    temp = tk.Toplevel(root)
+    temp.attributes("-alpha", 0.0)  # Make it invisible
+    
+    # Try to maximize the window to get work area
+    try:
+        temp.state('zoomed')
+        temp.update_idletasks()
+        work_area_height = temp.winfo_height() - 10 # Subtract a small margin for easier sizing
+        screen_width = temp.winfo_screenwidth()
+    except tk.TclError:
+        # Fallback if 'zoomed' is not supported (e.g., some Linux WMs)
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        # Assume a standard taskbar height as a fallback
+        work_area_height = screen_height - 80 
+        print("Warning: Could not determine taskbar height automatically. Using a fallback.")
+    finally:
+        temp.destroy()
+    
+    # Calculate coordinates to center horizontally and align to the top
+    x_coordinate = (screen_width - window_width) // 2
+    y_coordinate = 0  # Align to the top of the screen
+
+    # Set the geometry
+    root.geometry(f'{window_width}x{work_area_height}+{x_coordinate}+{y_coordinate}')
+
 def clear_image():
     global selected_image_path, image_sent_in_history
     selected_image_path = ""
@@ -1459,7 +1491,8 @@ def on_closing():
 # --- Build GUI ---
 window = TkinterDnD.Tk()
 window.title(APP_TITLE)
-window.geometry(WINDOW_GEOMETRY)
+set_initial_window_geometry(window)
+
 
 # --- Tkinter Variables ---
 tts_enabled = tk.BooleanVar(value=True)
